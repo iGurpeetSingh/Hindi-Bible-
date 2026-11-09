@@ -1,4 +1,5 @@
 name: Build Hindi Bible APK
+run-name: Android APK build
 
 on:
   push:
