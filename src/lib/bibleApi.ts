@@ -1,14 +1,22 @@
-const BASE = "https://api.youversion.com/v1";
+const BASE = "https://bible.helloao.org/api";
 
 export type ApiBible = {
-  id: number;
+  id: string;
   title: string;
+  name?: string;
   localized_title?: string;
   localized_abbreviation?: string;
   abbreviation?: string;
   copyright?: string;
   publisher_name?: string | null;
   language_tag?: string;
+  language?: string;
+  languageName?: string;
+  numberOfBooks?: number;
+  totalNumberOfChapters?: number;
+  licenseUrl?: string;
+  licenseNotice?: string;
+  license?: { commercialUse?: "allowed" | "not-allowed"; derivatives?: "allowed" | "not-allowed" };
 };
 
 export type ApiIndexBook = {
@@ -20,34 +28,70 @@ export type ApiIndexBook = {
 
 export type SearchVerse = { reference: string; passage_id?: string };
 
-async function request<T>(path: string, appKey: string): Promise<T> {
-  if (!appKey.trim()) throw new Error("पहले Settings में YouVersion App Key जोड़ें।");
-  const response = await fetch(`${BASE}${path}`, {
-    headers: { "X-YVP-App-Key": appKey.trim(), Accept: "application/json" }
-  });
+type TranslationResponse = { translations: (ApiBible & { languageEnglishName?: string })[] };
+type BooksResponse = { books: { id: string; name: string; commonName?: string; numberOfChapters: number }[] };
+type ChapterResponse = {
+  translation?: ApiBible;
+  book?: { id?: string; name?: string; commonName?: string };
+  chapter?: { number?: number; content?: { type: string; number?: number; text?: string; heading?: string }[] };
+};
+
+async function request<T>(path: string): Promise<T> {
+  const response = await fetch(`${BASE}${path}`);
   if (!response.ok) {
     const detail = await response.text().catch(() => "");
-    throw new Error(`Bible API error ${response.status}: ${detail || response.statusText}`);
+    throw new Error(`Free Bible API error ${response.status}: ${detail || response.statusText}`);
   }
   return response.json() as Promise<T>;
 }
 
-export async function getHindiBibles(key: string): Promise<ApiBible[]> {
-  const result = await request<{data: ApiBible[]}>("/bibles?language_ranges%5B%5D=hi&page_size=99", key);
-  return result.data ?? [];
+// No API key, account, or payment is required by this provider.
+export async function getHindiBibles(_unusedKey = ""): Promise<ApiBible[]> {
+  const result = await request<TranslationResponse>("/available_translations.json");
+  return (result.translations || [])
+    .filter(t => {
+      const language = `${t.language || ""} ${t.languageName || ""} ${t.languageEnglishName || ""}`.toLowerCase();
+      return language.includes("hin") || language.includes("hindi") || language.includes("हिन्दी") || language.includes("हिंदी");
+    })
+    .map(t => ({ ...t, title: t.name || t.title || t.id }));
 }
 
-export async function getBibleIndex(key: string, bibleId: number): Promise<ApiIndexBook[]> {
-  const result = await request<{books: ApiIndexBook[]}>(`/bibles/${bibleId}/index`, key);
-  return result.books ?? [];
+export async function getBibleIndex(_unusedKey: string, bibleId: string): Promise<ApiIndexBook[]> {
+  const result = await request<BooksResponse>(`/${encodeURIComponent(bibleId)}/books.json`);
+  return (result.books || []).filter(b => !b.id.startsWith("TOC")).map(b => ({
+    id: b.id,
+    title: b.commonName || b.name,
+    canon: "canonical",
+    chapters: Array.from({ length: b.numberOfChapters || 0 }, (_, i) => ({
+      id: i + 1,
+      passage_id: `${b.id}.${i + 1}`,
+      title: i + 1
+    }))
+  }));
 }
 
-export async function getPassage(key: string, bibleId: number, passageId: string): Promise<{id:string;content:string;reference:string}> {
-  return request(`/bibles/${bibleId}/passages/${encodeURIComponent(passageId)}?format=text`, key);
+export async function getPassage(_unusedKey: string, bibleId: string, passageId: string): Promise<{id:string;content:string;reference:string}> {
+  const parts = passageId.split(".");
+  const bookId = parts[0];
+  const chapterNumber = Number(parts[1]);
+  const verseNumber = parts[2] ? Number(parts[2]) : null;
+  if (!bookId || !Number.isInteger(chapterNumber) || chapterNumber < 1) {
+    throw new Error("अध्याय का reference सही नहीं है।");
+  }
+  const result = await request<ChapterResponse>(`/${encodeURIComponent(bibleId)}/${encodeURIComponent(bookId)}/${chapterNumber}.simple.json`);
+  const content = result.chapter?.content || [];
+  const verses = content
+    .filter(item => item.type === "verse" && typeof item.number === "number")
+    .filter(item => verseNumber === null || item.number === verseNumber)
+    .map(item => verseNumber === null ? `${item.number}. ${item.text || ""}` : item.text || "");
+  if (!verses.length) throw new Error("इस अनुवाद में यह अध्याय या वचन उपलब्ध नहीं है।");
+  const bookName = result.book?.commonName || result.book?.name || bookId;
+  const reference = verseNumber === null ? `${bookName} ${chapterNumber}` : `${bookName} ${chapterNumber}:${verseNumber}`;
+  return { id: passageId, content: verses.join("\n\n"), reference };
 }
 
-export async function searchVerses(key: string, bibleId: number, query: string): Promise<SearchVerse[]> {
-  const params = new URLSearchParams({query, bible_id:String(bibleId), user_intent:"unknown", page_size:"30"});
-  const result = await request<{verses: SearchVerse[]}>(`/search-verses?${params.toString()}`, key);
-  return result.verses ?? [];
+// The Free Use Bible API is a static scripture API, not a full-text search API.
+// Do not pretend to search the entire Bible. This placeholder is surfaced as a clear message.
+export async function searchVerses(_unusedKey: string, _bibleId: string, _query: string): Promise<SearchVerse[]> {
+  throw new Error("इस Free Bible API में अभी पूरी बाइबल का full-text search endpoint उपलब्ध नहीं है। अध्याय पढ़ना और reference खोलना काम करता है; पूरे Bible Search को अलग search index से जोड़ा जाएगा।");
 }
