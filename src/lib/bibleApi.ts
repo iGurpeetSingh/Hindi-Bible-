@@ -1,3 +1,5 @@
+import { BOOKS } from "../data/books";
+
 const BASE = "https://bible.helloao.org/api";
 
 export type ApiBible = {
@@ -90,8 +92,27 @@ export async function getPassage(_unusedKey: string, bibleId: string, passageId:
   return { id: passageId, content: verses.join("\n\n"), reference };
 }
 
-// The Free Use Bible API is a static scripture API, not a full-text search API.
-// Do not pretend to search the entire Bible. This placeholder is surfaced as a clear message.
-export async function searchVerses(_unusedKey: string, _bibleId: string, _query: string): Promise<SearchVerse[]> {
-  throw new Error("इस Free Bible API में अभी पूरी बाइबल का full-text search endpoint उपलब्ध नहीं है। अध्याय पढ़ना और reference खोलना काम करता है; पूरे Bible Search को अलग search index से जोड़ा जाएगा।");
+// The provider has no global full-text search endpoint. This supports exact
+// scripture-reference lookup without pretending to search every verse by keyword.
+export async function searchVerses(_unusedKey: string, _bibleId: string, query: string): Promise<SearchVerse[]> {
+  const input = query.trim();
+  const dotMatch = input.match(/^([1-3]?[A-Z]{2,3})\.(\d+)(?:\.(\d+))?$/i);
+  const namedMatch = input.match(/^(.+?)\s+(\d+)(?::(\d+))?$/);
+  let book: typeof BOOKS[number] | undefined;
+  let chapter = 0;
+  let verse: number | undefined;
+  if (dotMatch) {
+    book = BOOKS.find(b => b.id.toLowerCase() === dotMatch[1].toLowerCase());
+    chapter = Number(dotMatch[2]);
+    verse = dotMatch[3] ? Number(dotMatch[3]) : undefined;
+  } else if (namedMatch) {
+    const name = namedMatch[1].trim().toLocaleLowerCase();
+    book = BOOKS.find(b => b.id.toLowerCase() === name || b.english.toLocaleLowerCase() === name || b.hindi.toLocaleLowerCase() === name);
+    chapter = Number(namedMatch[2]);
+    verse = namedMatch[3] ? Number(namedMatch[3]) : undefined;
+  }
+  if (!book || !Number.isInteger(chapter) || chapter < 1 || chapter > book.chapters || (verse !== undefined && (!Number.isInteger(verse) || verse < 1))) {
+    throw new Error("अभी Reference Search उपलब्ध है। उदाहरण: John 3:16, यूहन्ना 3:16 या JHN.3.16 लिखें।");
+  }
+  return [{ reference: `${book.id}.${chapter}${verse ? `.${verse}` : ""}` }];
 }
