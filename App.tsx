@@ -20,8 +20,7 @@ function Header({title,subtitle}: {title:string;subtitle?:string}) {
 
 export default function App() {
   const [tab,setTab] = useState<Tab>("home");
-  const [apiKey,setApiKey] = useState("");
-  const [bibleId,setBibleId] = useState("");
+    const [bibleId,setBibleId] = useState("");
   const [versions,setVersions] = useState<ApiBible[]>([]);
   const [catalog,setCatalog] = useState<ApiIndexBook[]>([]);
   const [book,setBook] = useState<BibleBook>(BOOKS[42]);
@@ -43,8 +42,8 @@ export default function App() {
 
   useEffect(() => {
     (async()=>{
-      const [key,id,bm,hist,n,fz] = await Promise.all([storage.getApiKey(),storage.getBibleId(),storage.getBookmarks(),storage.getHistory(),storage.getNotes(),storage.getFontSize()]);
-      setApiKey(key || ""); setBibleId(id); setBookmarks(bm); setHistory(hist); setNotes(n); setFontSize(fz);
+      const [id,bm,hist,n,fz] = await Promise.all([storage.getBibleId(),storage.getBookmarks(),storage.getHistory(),storage.getNotes(),storage.getFontSize()]);
+      setBibleId(id); setBookmarks(bm); setHistory(hist); setNotes(n); setFontSize(fz);
     })();
   },[]);
 
@@ -56,7 +55,7 @@ export default function App() {
         setCatalog(idx); setDaily(verse);
       } catch(e) { setError(e instanceof Error ? e.message : "Bible data load नहीं हुआ।"); }
     })();
-  },[apiKey,bibleId]);
+  },[bibleId]);
 
   const chapterCount = useMemo(()=>catalog.find(x=>x.id===book.id)?.chapters.length || book.chapters,[catalog,book]);
   const filteredBooks = useMemo(()=>BOOKS.filter(b=>(testament==="all"||b.testament===testament) && (b.hindi.toLowerCase().includes(filter.toLowerCase())||b.english.toLowerCase().includes(filter.toLowerCase()))),[filter,testament]);
@@ -95,7 +94,7 @@ export default function App() {
       const mapped = await Promise.all(refs.slice(0,12).map(async item=>{
         const id = item.reference || item.passage_id || "";
         let text: Passage|undefined;
-        try { text = await getPassage(apiKey,bibleId,id); } catch {}
+        try { text = await getPassage("",bibleId,id); } catch {}
         return {reference:id,passage:text};
       }));
       setResults(mapped);
@@ -175,10 +174,9 @@ export default function App() {
         {tab==="settings" && <>
           <Header title="सेटिंग्स" subtitle="Bible content provider और reading preferences"/>
           <View style={s.settingsCard}>
-            <Text style={s.sectionTitle}>YouVersion Platform API</Text>
-            <Text style={s.muted}>अपना App Key डालें। यह आपके डिवाइस पर सेव होगा। इसे GitHub में commit न करें।</Text>
-            <TextInput value={apiKey} onChangeText={setApiKey} placeholder="YouVersion App Key" placeholderTextColor={C.muted} autoCapitalize="none" style={s.input} secureTextEntry/>
-            <Action label="हिंदी Bible Versions खोजें" onPress={async()=>{try{const list=await getHindiBibles(apiKey);setVersions(list);if(!list.length)Alert.alert("कोई version नहीं मिला","इस App Key को Hindi Bible content की अनुमति नहीं मिली हो सकती।");}catch(e){Alert.alert("API Error",e instanceof Error?e.message:"Request failed");}}}/>
+            <Text style={s.sectionTitle}>Free Bible Data Provider</Text>
+            <Text style={s.muted}>यह API मुफ्त है। कोई API Key, अकाउंट या पेमेंट नहीं चाहिए। उपलब्ध हिंदी अनुवाद इंटरनेट से लोड करें।</Text>
+            <Action label="हिंदी Bible Versions खोजें" onPress={async()=>{try{const list=await getHindiBibles();setVersions(list);if(!list.length)Alert.alert("हिंदी अनुवाद नहीं मिला","Provider की उपलब्ध सूची में Hindi भाषा का अनुवाद नहीं मिला। बाद में दोबारा प्रयास करें।");}catch(e){Alert.alert("API Error",e instanceof Error?e.message:"Request failed");}}}/>
             {versions.map(v=><Pressable key={v.id} style={[s.versionRow,bibleId===v.id&&s.versionSelected]} onPress={()=>setBibleId(v.id)}><Text style={s.savedTitle}>{v.localized_title||v.title}</Text><Text style={s.muted}>ID: {v.id} • {v.localized_abbreviation||v.abbreviation}</Text>{!!v.copyright&&<Text style={s.copyright}>{v.copyright}</Text>}</Pressable>)}
             
             <Action label="सेटिंग्स सेव करें" onPress={saveSettings}/>
