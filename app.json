@@ -1,0 +1,20 @@
+{
+  "expo": {
+    "name": "Hindi Bible",
+    "slug": "hindi-bible",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "userInterfaceStyle": "dark",
+    "newArchEnabled": true,
+    "android": {
+      "package": "com.igurpeetsingh.hindibible",
+      "versionCode": 1,
+      "adaptiveIcon": {
+        "backgroundColor": "#101B2B"
+      }
+    },
+    "plugins": [
+      "expo-status-bar"
+    ]
+  }
+}
