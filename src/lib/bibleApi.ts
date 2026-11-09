@@ -72,7 +72,7 @@ export async function getBibleIndex(_unusedKey: string, bibleId: string): Promis
   }));
 }
 
-export async function getPassage(_unusedKey: string, bibleId: string, passageId: string): Promise<{id:string;content:string;reference:string}> {
+export async function getPassage(_unusedKey: string, bibleId: string, passageId: string): Promise<{id:string;content:string;reference:string;copyright?:string}> {
   const parts = passageId.split(".");
   const bookId = parts[0];
   const chapterNumber = Number(parts[1]);
