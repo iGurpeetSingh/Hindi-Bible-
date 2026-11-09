@@ -1,198 +1,258 @@
 import React, { useEffect, useMemo, useState } from "react";
 import {
-  ActivityIndicator, Alert, KeyboardAvoidingView, Platform, Pressable,
-  SafeAreaView, ScrollView, StatusBar, StyleSheet, Text, TextInput, View
+  ActivityIndicator, Alert, Modal, Platform, Pressable, SafeAreaView,
+  ScrollView, StatusBar, StyleSheet, Text, TextInput, View
 } from "react-native";
+import * as Speech from "expo-speech";
 import { BOOKS, BibleBook } from "./src/data/books";
 import { ApiBible, ApiIndexBook, getBibleIndex, getHindiBibles, getPassage, searchVerses } from "./src/lib/bibleApi";
 import { SavedReference, storage } from "./src/lib/storage";
 
 type Tab = "home" | "bible" | "search" | "saved" | "settings";
 type Passage = { id:string; content:string; reference:string; copyright?:string };
-const C = { bg:"#0B1422", panel:"#142236", panel2:"#1B2B40", gold:"#D7B36A", cream:"#F3EBD9", muted:"#A7B2C1", line:"#293A50", green:"#8DBA9A", red:"#E59A8B" };
+type PickerTab = "BOOK" | "CHAPTER" | "VERSE";
+const C = { bg:"#F4F7FB", blue:"#0879E8", blueDark:"#075CB5", pale:"#D9EBFF", ink:"#172536", muted:"#66778B", line:"#D7E1EC", white:"#FFFFFF", gold:"#D6A64D", green:"#0E6256", red:"#A33D42" };
 
-function Action({label,onPress,secondary=false}: {label:string;onPress:()=>void;secondary?:boolean}) {
-  return <Pressable onPress={onPress} style={[s.action, secondary && s.actionSecondary]}><Text style={[s.actionText,secondary&&{color:C.cream}]}>{label}</Text></Pressable>;
+function Button({label,onPress,outline=false,disabled=false}:{label:string;onPress:()=>void;outline?:boolean;disabled?:boolean}) {
+  return <Pressable disabled={disabled} onPress={onPress} style={[s.button,outline&&s.buttonOutline,disabled&&{opacity:.45}]}><Text style={[s.buttonText,outline&&{color:C.blue}]}>{label}</Text></Pressable>;
 }
-function Header({title,subtitle}: {title:string;subtitle?:string}) {
-  return <View style={s.header}><Text style={s.brand}>✦ WORD & LIGHT</Text><Text style={s.pageTitle}>{title}</Text>{!!subtitle&&<Text style={s.subtitle}>{subtitle}</Text>}</View>;
+function verseItems(content:string) {
+  return content.split(/\n\s*\n/).map((line)=>line.trim()).filter(Boolean).map((line)=> {
+    const m=line.match(/^(\d+)\.\s*([\s\S]*)$/);
+    return m ? {number:Number(m[1]),text:m[2]} : {number:0,text:line};
+  });
 }
 
 export default function App() {
-  const [tab,setTab] = useState<Tab>("home");
-    const [bibleId,setBibleId] = useState("");
-  const [versions,setVersions] = useState<ApiBible[]>([]);
-  const [catalog,setCatalog] = useState<ApiIndexBook[]>([]);
-  const [book,setBook] = useState<BibleBook>(BOOKS[42]);
-  const [chapter,setChapter] = useState(1);
-  const [passage,setPassage] = useState<Passage|null>(null);
-  const [loading,setLoading] = useState(false);
-  const [error,setError] = useState("");
-  const [filter,setFilter] = useState("");
-  const [testament,setTestament] = useState<"all"|"old_testament"|"new_testament">("all");
-  const [query,setQuery] = useState("");
-  const [results,setResults] = useState<{reference:string;passage?:Passage}[]>([]);
-  const [bookmarks,setBookmarks] = useState<SavedReference[]>([]);
-  const [history,setHistory] = useState<SavedReference[]>([]);
-  const [notes,setNotes] = useState<Record<string,string>>({});
-  const [fontSize,setFontSize] = useState(19);
-  const [noteText,setNoteText] = useState("");
-  const [showNote,setShowNote] = useState(false);
-  const [daily,setDaily] = useState<Passage|null>(null);
+  const [tab,setTab]=useState<Tab>("home");
+  const [bibleId,setBibleId]=useState("");
+  const [versions,setVersions]=useState<ApiBible[]>([]);
+  const [catalog,setCatalog]=useState<ApiIndexBook[]>([]);
+  const [book,setBook]=useState<BibleBook>(BOOKS[0]);
+  const [chapter,setChapter]=useState(1);
+  const [passage,setPassage]=useState<Passage|null>(null);
+  const [loading,setLoading]=useState(false);
+  const [error,setError]=useState("");
+  const [filter,setFilter]=useState("");
+  const [testament,setTestament]=useState<"all"|"old_testament"|"new_testament">("all");
+  const [query,setQuery]=useState("");
+  const [results,setResults]=useState<{reference:string;passage?:Passage}[]>([]);
+  const [bookmarks,setBookmarks]=useState<SavedReference[]>([]);
+  const [history,setHistory]=useState<SavedReference[]>([]);
+  const [notes,setNotes]=useState<Record<string,string>>({});
+  const [fontSize,setFontSize]=useState(21);
+  const [noteText,setNoteText]=useState("");
+  const [showNote,setShowNote]=useState(false);
+  const [daily,setDaily]=useState<Passage|null>(null);
+  const [drawer,setDrawer]=useState(false);
+  const [picker,setPicker]=useState(false);
+  const [pickerTab,setPickerTab]=useState<PickerTab>("BOOK");
+  const [speaking,setSpeaking]=useState(false);
+  const [speechVerse,setSpeechVerse]=useState(0);
 
-  useEffect(() => {
+  useEffect(()=>{
     (async()=>{
-      const [id,bm,hist,n,fz] = await Promise.all([storage.getBibleId(),storage.getBookmarks(),storage.getHistory(),storage.getNotes(),storage.getFontSize()]);
-      setBibleId(id); setBookmarks(bm); setHistory(hist); setNotes(n); setFontSize(fz);
+      const [id,bm,hist,n,fz]=await Promise.all([storage.getBibleId(),storage.getBookmarks(),storage.getHistory(),storage.getNotes(),storage.getFontSize()]);
+      setBibleId(id);setBookmarks(bm);setHistory(hist);setNotes(n);setFontSize(fz);
     })();
+    return ()=>{Speech.stop();};
   },[]);
 
   useEffect(()=>{
-    if (!bibleId) return;
+    if(!bibleId)return;
     (async()=>{
       try {
-        const [idx,verse] = await Promise.all([getBibleIndex("",bibleId),getPassage("",bibleId,"JHN.3.16")]);
-        setCatalog(idx); setDaily(verse);
-      } catch(e) { setError(e instanceof Error ? e.message : "Bible data load नहीं हुआ।"); }
+        const [idx,verse]=await Promise.all([getBibleIndex("",bibleId),getPassage("",bibleId,"JHN.3.16")]);
+        setCatalog(idx);setDaily(verse);
+      } catch(e) {setError(e instanceof Error?e.message:"Bible data लोड नहीं हुआ।");}
     })();
   },[bibleId]);
 
-  const chapterCount = useMemo(()=>catalog.find(x=>x.id===book.id)?.chapters.length || book.chapters,[catalog,book]);
-  const filteredBooks = useMemo(()=>BOOKS.filter(b=>(testament==="all"||b.testament===testament) && (b.hindi.toLowerCase().includes(filter.toLowerCase())||b.english.toLowerCase().includes(filter.toLowerCase()))),[filter,testament]);
+  const chapterCount=useMemo(()=>catalog.find(x=>x.id===book.id)?.chapters.length||book.chapters,[catalog,book]);
+  const selectedApiBook=useMemo(()=>catalog.find(x=>x.id===book.id),[catalog,book]);
+  const verseList=useMemo(()=>passage?verseItems(passage.content):[],[passage]);
+  const filteredBooks=useMemo(()=>BOOKS.filter(b=>(testament==="all"||b.testament===testament)&&(b.hindi.toLowerCase().includes(filter.toLowerCase())||b.english.toLowerCase().includes(filter.toLowerCase()))),[filter,testament]);
 
-  async function openChapter(nextBook: BibleBook, nextChapter:number) {
-    setBook(nextBook); setChapter(nextChapter); setTab("bible"); setPassage(null); setError(""); setShowNote(false);
-    const ref = `${nextBook.id}.${nextChapter}`;
-    setNoteText(notes[ref] || "");
-    if (!bibleId) { setError("पहले Settings में उपलब्ध Hindi Bible Translation चुनें।"); return; }
+  async function openChapter(nextBook:BibleBook,nextChapter:number) {
+    setBook(nextBook);setChapter(nextChapter);setTab("bible");setDrawer(false);setPicker(false);setPassage(null);setError("");setShowNote(false);setNoteText(notes[`${nextBook.id}.${nextChapter}`]||"");
+    await Speech.stop();setSpeaking(false);
+    if(!bibleId){setError("पहले Settings में जाकर Hindi Bible Translation चुनें।");return;}
     setLoading(true);
     try {
-      const data = await getPassage("",bibleId,ref);
+      const data=await getPassage("",bibleId,`${nextBook.id}.${nextChapter}`);
       setPassage(data);
-      const item: SavedReference = {id:ref,reference:`${nextBook.hindi} ${nextChapter}`,bookId:nextBook.id,chapter:nextChapter,createdAt:Date.now()};
-      const updated = [item,...history.filter(x=>x.id!==ref)].slice(0,40);
-      setHistory(updated); await storage.setHistory(updated);
-    } catch(e) { setError(e instanceof Error ? e.message : "अध्याय लोड नहीं हुआ।"); }
-    finally { setLoading(false); }
+      const item:SavedReference={id:`${nextBook.id}.${nextChapter}`,reference:`${nextBook.hindi} ${nextChapter}`,bookId:nextBook.id,chapter:nextChapter,createdAt:Date.now()};
+      const updated=[item,...history.filter(x=>x.id!==item.id)].slice(0,50);
+      setHistory(updated);await storage.setHistory(updated);
+    } catch(e){setError(e instanceof Error?e.message:"अध्याय लोड नहीं हुआ।");}
+    finally{setLoading(false);}
+  }
+
+  async function selectBook(b:BibleBook) {
+    setBook(b);setChapter(1);setPickerTab("CHAPTER");
+    await openChapter(b,1);
   }
 
   async function toggleBookmark() {
-    const id = `${book.id}.${chapter}`;
-    const exists = bookmarks.some(x=>x.id===id);
-    const item: SavedReference = {id,reference:`${book.hindi} ${chapter}`,bookId:book.id,chapter,createdAt:Date.now()};
-    const updated = exists ? bookmarks.filter(x=>x.id!==id) : [item,...bookmarks];
-    setBookmarks(updated); await storage.setBookmarks(updated);
-    Alert.alert(exists ? "Bookmark हटाया" : "Bookmark सेव हुआ");
+    const id=`${book.id}.${chapter}`;const exists=bookmarks.some(x=>x.id===id);
+    const item:SavedReference={id,reference:`${book.hindi} ${chapter}`,bookId:book.id,chapter,createdAt:Date.now()};
+    const updated=exists?bookmarks.filter(x=>x.id!==id):[item,...bookmarks];
+    setBookmarks(updated);await storage.setBookmarks(updated);
+    Alert.alert(exists?"बुकमार्क हटाया":"बुकमार्क सेव हुआ",exists?"यह अध्याय सेव सूची से हटा दिया गया।":"यह अध्याय आपकी सेव सूची में है।");
   }
 
-  async function runSearch() {
-    if (!bibleId) { Alert.alert("सेटअप जरूरी है","पहले Settings में Hindi Bible Translation चुनें।"); return; }
-    if (!query.trim()) return;
-    setLoading(true); setError(""); setResults([]);
-    try {
-      const refs = await searchVerses("",bibleId,query.trim());
-      const mapped = await Promise.all(refs.slice(0,12).map(async item=>{
-        const id = item.reference || item.passage_id || "";
-        let text: Passage|undefined;
-        try { text = await getPassage("",bibleId,id); } catch {}
-        return {reference:id,passage:text};
-      }));
+  async function speakFrom(index:number) {
+    if(!passage||!verseList.length)return;
+    await Speech.stop();setSpeaking(true);setSpeechVerse(index);
+    const speakNext=(i:number)=>{
+      if(i>=verseList.length){setSpeaking(false);setSpeechVerse(0);return;}
+      setSpeechVerse(i);
+      Speech.speak(verseList[i].text,{language:"hi-IN",rate:0.88,pitch:1,onDone:()=>speakNext(i+1),onStopped:()=>setSpeaking(false),onError:()=>{setSpeaking(false);Alert.alert("आवाज़ उपलब्ध नहीं","फोन की Text-to-Speech सेटिंग में Hindi voice डाउनलोड/चुनें।");}});
+    };
+    speakNext(index);
+  }
+  async function stopSpeech(){await Speech.stop();setSpeaking(false);}
+  async function runSearch(){
+    if(!bibleId){Alert.alert("सेटअप जरूरी है","पहले Settings में Hindi Bible Translation चुनें।");return;}
+    if(!query.trim())return;
+    setLoading(true);setError("");setResults([]);
+    try{
+      const refs=await searchVerses("",bibleId,query.trim());
+      const mapped=await Promise.all(refs.map(async item=>{let text:Passage|undefined;try{text=await getPassage("",bibleId,item.reference||item.passage_id||"");}catch{}return {reference:item.reference||item.passage_id||"",passage:text};}));
       setResults(mapped);
-    } catch(e) { setError(e instanceof Error ? e.message : "Search नहीं हुआ।"); }
-    finally { setLoading(false); }
+    }catch(e){setError(e instanceof Error?e.message:"खोज पूरी नहीं हुई।");}
+    finally{setLoading(false);}
   }
+  async function saveSettings(){await storage.setBibleId(bibleId);Alert.alert("सेटिंग सेव हुई","अब बाइबल पढ़ना शुरू कर सकते हैं।");}
+  function openReference(ref:string){const p=ref.split(".");const target=BOOKS.find(x=>x.id===p[0]);if(target)openChapter(target,Number(p[1])||1);}
+  function changeTab(next:Tab){stopSpeech();setTab(next);setError("");setDrawer(false);setPicker(false);}
+  function openPicker(which:PickerTab="BOOK"){setPickerTab(which);setPicker(true);}
+  const currentSaved=bookmarks.some(x=>x.id===`${book.id}.${chapter}`);
+  const chapterNumbers=Array.from({length:chapterCount},(_,i)=>i+1);
+  const verseNumbers=verseList.map(v=>v.number).filter(Boolean);
 
-  async function saveSettings() {
-    await storage.setBibleId(bibleId);
-    Alert.alert("सेटिंग सेव हुई","अब Bible tab में अध्याय खोलें।");
-  }
+  return <SafeAreaView style={s.safe}>
+    <StatusBar barStyle="dark-content" backgroundColor={C.pale}/>
+    <View style={s.topbar}>
+      <Text style={s.brandMark}>✦</Text><Text style={s.brandName}>पवित्र बाइबल</Text>
+      <Pressable onPress={()=>changeTab("settings")} style={s.topIcon}><Text style={s.topIconText}>⚙</Text></Pressable>
+    </View>
+    <ScrollView style={s.body} contentContainerStyle={s.content} keyboardShouldPersistTaps="handled">
+      {tab==="home"&&<>
+        <View style={s.homeHero}>
+          <Text style={s.homeEyebrow}>WORD • FAITH • LIFE</Text>
+          <Text style={s.homeTitle}>परमेश्वर के वचन में आपका स्वागत है</Text>
+          <Text style={s.homeSub}>हर दिन पढ़ें, समझें और वचन को सुनें।</Text>
+          <Button label="पवित्र बाइबल पढ़ें  →" onPress={()=>bibleId?openChapter(BOOKS[0],1):changeTab("settings")}/>
+        </View>
+        <View style={s.dailyHead}><Text style={s.sectionTitle}>आज का वचन</Text><Text style={s.kicker}>DAILY SCRIPTURE</Text></View>
+        <Pressable style={s.dailyCard} onPress={()=>openChapter(BOOKS.find(x=>x.id==="JHN")!,3)}>
+          <Text style={s.dailyRef}>यूहन्ना 3:16</Text><Text style={s.dailyText}>{daily?.content||"पहले Settings में हिंदी Bible Translation चुनें, फिर आज का वचन यहाँ दिखाई देगा।"}</Text>
+          <Text style={s.dailyFoot}>वचन पढ़ने के लिए टैप करें  →</Text>
+        </Pressable>
+        <Text style={s.sectionTitle}>पढ़ना जारी रखें</Text>
+        {history[0]?<Pressable style={s.resumeCard} onPress={()=>openChapter(BOOKS.find(x=>x.id===history[0].bookId)||BOOKS[0],history[0].chapter)}><View style={{flex:1}}><Text style={s.kicker}>LAST READ</Text><Text style={s.cardTitle}>{history[0].reference}</Text><Text style={s.muted}>अपनी पढ़ाई वहीं से जारी रखें</Text></View><Text style={s.cardArrow}>→</Text></Pressable>:<Pressable style={s.resumeCard} onPress={()=>openChapter(BOOKS[0],1)}><View style={{flex:1}}><Text style={s.kicker}>START READING</Text><Text style={s.cardTitle}>उत्पत्ति 1 से पढ़ना शुरू करें</Text><Text style={s.muted}>पहली पुस्तक, पहला अध्याय</Text></View><Text style={s.cardArrow}>→</Text></Pressable>}
+        <Text style={s.sectionTitle}>बाइबल के भाग</Text>
+        <View style={s.twoCards}>
+          <Pressable style={s.testamentCard} onPress={()=>{setTestament("old_testament");changeTab("bible");}}><Text style={s.cardEmoji}>📜</Text><Text style={s.cardTitle}>पूर्व विधान</Text><Text style={s.muted}>39 पुस्तकें</Text></Pressable>
+          <Pressable style={s.testamentCard} onPress={()=>{setTestament("new_testament");changeTab("bible");}}><Text style={s.cardEmoji}>✝</Text><Text style={s.cardTitle}>नया करार</Text><Text style={s.muted}>27 पुस्तकें</Text></Pressable>
+        </View>
+        <Text style={s.sectionTitle}>बाइबल के फीचर्स</Text>
+        <View style={s.featureGrid}>
+          {[
+            ["📖","पवित्र बाइबल",()=>openChapter(BOOKS[0],1)],["▶","तुरंत बाइबल",()=>openChapter(BOOKS[0],1)],["🔎","खोज",()=>changeTab("search")],
+            ["☆","बुकमार्क",()=>changeTab("saved")],["📝","नोट्स",()=>changeTab("saved")],["⚙","सेटिंग",()=>changeTab("settings")]
+          ].map(([icon,label,fn])=><Pressable key={String(label)} style={s.featureCard} onPress={fn as ()=>void}><Text style={s.featureIcon}>{icon as string}</Text><Text style={s.featureLabel}>{label as string}</Text></Pressable>)}
+        </View>
+      </>}
 
-  function openSearchResult(ref:string) {
-    const parts=ref.split(".");
-    const target=BOOKS.find(x=>x.id===parts[0]);
-    if(target) openChapter(target,Number(parts[1])||1);
-  }
+      {tab==="bible"&&<>
+        <View style={s.readerHeader}>
+          <Pressable onPress={()=>setDrawer(true)} style={s.headerAction}><Text style={s.headerActionText}>☰</Text></Pressable>
+          <Pressable onPress={()=>openPicker("CHAPTER")} style={s.bookChapter}><Text style={s.bookChapterText}>{book.hindi} {chapter}　⌄</Text></Pressable>
+          <Pressable onPress={()=>speaking?stopSpeech():speakFrom(0)} style={s.headerAction}><Text style={s.headerActionText}>{speaking?"Ⅱ":"▶"}</Text></Pressable>
+          <Pressable onPress={()=>changeTab("home")} style={s.headerAction}><Text style={s.headerActionText}>⌂</Text></Pressable>
+          <Pressable onPress={()=>changeTab("settings")} style={s.headerAction}><Text style={s.headerActionText}>⚙</Text></Pressable>
+        </View>
+        <ScrollView horizontal showsHorizontalScrollIndicator={false} style={s.chapterStrip} contentContainerStyle={s.chapterStripContent}>
+          {chapterNumbers.map(n=><Pressable key={n} onPress={()=>openChapter(book,n)} style={[s.chapterPill,n===chapter&&s.chapterPillActive]}><Text style={[s.chapterPillText,n===chapter&&s.chapterPillTextActive]}>{n}</Text></Pressable>)}
+        </ScrollView>
+        <View style={s.readerActions}>
+          <Text style={s.readerTitle}>{book.hindi} {chapter}</Text>
+          <View style={s.inlineActions}><Pressable onPress={toggleBookmark}><Text style={s.inlineActionText}>{currentSaved?"★ सेव":"☆ सेव करें"}</Text></Pressable><Pressable onPress={()=>openPicker("BOOK")}><Text style={s.inlineActionText}>पुस्तक चुनें</Text></Pressable></View>
+        </View>
+        {loading&&<ActivityIndicator color={C.blue} size="large" style={{margin:24}}/>}
+        {!!error&&<Text style={s.error}>{error}</Text>}
+        {!passage&&!loading&&!error&&<View style={s.emptyBox}><Text style={s.emptyTitle}>बाइबल पढ़ना शुरू करें</Text><Text style={s.muted}>ऊपर से पुस्तक और अध्याय चुनें।</Text><Button label="पुस्तक चुनें" onPress={()=>openPicker("BOOK")}/></View>}
+        {passage&&<View style={s.verseList}>
+          {verseList.map((v,i)=><Pressable key={v.number||i} onPress={()=>speaking?stopSpeech():speakFrom(i)} style={[s.verseRow,speaking&&speechVerse===i&&s.verseActive]}>
+            {v.number>0&&<Text style={s.verseNumber}>{v.number}</Text>}
+            <Text style={[s.verseText,{fontSize,lineHeight:fontSize*1.75}]}>{v.text}</Text>
+          </Pressable>)}
+          <Text style={s.copyright}>{passage.reference} • {passage.copyright||"अनुवाद का लाइसेंस और श्रेय Settings में देखें।"}</Text>
+        </View>}
+        <View style={s.chapterFooter}>
+          <Button label="← पिछला अध्याय" outline onPress={()=>openChapter(book,Math.max(1,chapter-1))}/>
+          <Button label="अगला अध्याय →" onPress={()=>openChapter(book,Math.min(chapterCount,chapter+1))}/>
+        </View>
+        <View style={s.readerActions}><Text style={s.sectionTitle}>पढ़ने की सुविधा</Text><View style={s.inlineActions}><Button label="A−" outline onPress={()=>{const n=Math.max(16,fontSize-1);setFontSize(n);storage.setFontSize(n);}}/><Button label="A+" outline onPress={()=>{const n=Math.min(32,fontSize+1);setFontSize(n);storage.setFontSize(n);}}/><Button label="नोट लिखें" onPress={()=>setShowNote(x=>!x)}/></View></View>
+        {showNote&&<View style={s.noteCard}><TextInput value={noteText} onChangeText={setNoteText} multiline placeholder="इस अध्याय पर अपने विचार लिखें..." placeholderTextColor={C.muted} style={s.noteInput}/><Button label="नोट सेव करें" onPress={async()=>{const n={...notes,[`${book.id}.${chapter}`]:noteText};setNotes(n);await storage.setNotes(n);Alert.alert("सेव हो गया","आपका नोट इस डिवाइस पर सेव है।");}}/></View>}
+      </>}
 
-  const currentSaved = bookmarks.some(x=>x.id===`${book.id}.${chapter}`);
-  const activeTitle = tab==="home"?"आज का वचन":tab==="bible"?"पवित्र बाइबल":tab==="search"?"वचन खोजें":tab==="saved"?"आपकी लाइब्रेरी":"सेटिंग्स";
+      {tab==="search"&&<>
+        <Text style={s.pageHeading}>वचन खोजें</Text><Text style={s.muted}>किसी पुस्तक, अध्याय और वचन का Reference खोजें।</Text>
+        <TextInput value={query} onChangeText={setQuery} onSubmitEditing={runSearch} placeholder="उदाहरण: यूहन्ना 3:16 या GEN.1.1" placeholderTextColor={C.muted} style={s.searchInput}/>
+        <Button label="खोजें" onPress={runSearch}/>
+        {loading&&<ActivityIndicator color={C.blue} style={{margin:20}}/>}{!!error&&<Text style={s.error}>{error}</Text>}
+        {results.map((r,i)=><Pressable key={r.reference+i} style={s.resultCard} onPress={()=>openReference(r.reference)}><Text style={s.dailyRef}>{r.reference}</Text><Text style={s.resultText}>{r.passage?.content||"वचन खोलें"}</Text></Pressable>)}
+      </>}
 
-  return (
-    <SafeAreaView style={s.safe}>
-      <StatusBar barStyle="light-content" backgroundColor={C.bg}/>
-      <View style={s.topbar}><Text style={s.logo}>✦</Text><Text style={s.topbarName}>HINDI BIBLE</Text><Text style={s.topbarTag}>WORD • FAITH • LIFE</Text></View>
-      <ScrollView style={s.body} contentContainerStyle={s.content} keyboardShouldPersistTaps="handled">
-        {tab==="home" && <>
-          <Header title="वचन में आपका स्वागत है" subtitle="हर दिन परमेश्वर के वचन के साथ एक नई शुरुआत।"/>
-          <View style={s.hero}>
-            <Text style={s.eyebrow}>VERSE OF THE DAY</Text>
-            <Text style={s.heroRef}>यूहन्ना 3:16</Text>
-            <Text style={s.heroVerse}>{daily?.content || "परमेश्वर के प्रेम और उसके वचन को प्रतिदिन पढ़ें।"}</Text>
-            <Text style={s.heroFoot}>{daily?.reference || "John 3:16"} • Hindi Bible</Text>
-          </View>
-          <Text style={s.sectionTitle}>पढ़ना जारी रखें</Text>
-          {history[0] ? <Pressable style={s.resumeCard} onPress={()=>openChapter(BOOKS.find(x=>x.id===history[0].bookId)||BOOKS[42],history[0].chapter)}><View><Text style={s.cardKicker}>LAST READ</Text><Text style={s.cardTitle}>{history[0].reference}</Text><Text style={s.muted}>अपनी पढ़ाई वहीं से जारी रखें</Text></View><Text style={s.arrow}>→</Text></Pressable> : <Text style={s.empty}>आपकी Reading History यहाँ दिखाई देगी।</Text>}
-          <Text style={s.sectionTitle}>बाइबल के भाग</Text>
-          <View style={s.twoCards}>
-            <Pressable style={s.testamentCard} onPress={()=>{setTestament("old_testament");setTab("bible");}}><Text style={s.cardKicker}>39 BOOKS</Text><Text style={s.cardTitle}>पुराना नियम</Text><Text style={s.muted}>Old Testament</Text></Pressable>
-            <Pressable style={s.testamentCard} onPress={()=>{setTestament("new_testament");setTab("bible");}}><Text style={s.cardKicker}>27 BOOKS</Text><Text style={s.cardTitle}>नया नियम</Text><Text style={s.muted}>New Testament</Text></Pressable>
-          </View>
-          <Text style={s.sectionTitle}>जल्दी पढ़ें</Text>
-          <View style={s.quickRow}>{["JHN","MAT","PSA","GEN"].map(id=>{const b=BOOKS.find(x=>x.id===id)!;return <Pressable key={id} style={s.quick} onPress={()=>openChapter(b,1)}><Text style={s.quickName}>{b.hindi}</Text><Text style={s.muted}>{b.english}</Text></Pressable>;})}</View>
-        </>}
+      {tab==="saved"&&<>
+        <Text style={s.pageHeading}>सेव किए गए वचन</Text><Text style={s.sectionTitle}>बुकमार्क ({bookmarks.length})</Text>
+        {bookmarks.map(x=><Pressable key={x.id} style={s.savedRow} onPress={()=>openChapter(BOOKS.find(b=>b.id===x.bookId)||BOOKS[0],x.chapter)}><Text style={s.cardTitle}>☆ {x.reference}</Text><Text style={s.muted}>अध्याय खोलें →</Text></Pressable>)}
+        {!bookmarks.length&&<Text style={s.emptyBox}>अभी कोई बुकमार्क सेव नहीं है।</Text>}
+        <Text style={s.sectionTitle}>हाल ही में पढ़े ({history.length})</Text>
+        {history.map(x=><Pressable key={x.id} style={s.savedRow} onPress={()=>openChapter(BOOKS.find(b=>b.id===x.bookId)||BOOKS[0],x.chapter)}><Text style={s.cardTitle}>{x.reference}</Text><Text style={s.muted}>फिर से पढ़ें →</Text></Pressable>)}
+      </>}
 
-        {tab==="bible" && <>
-          <Header title={passage ? `${book.hindi} ${chapter}` : "पुस्तक चुनें"} subtitle={passage ? book.english : "66 पुस्तकों में से पढ़ना शुरू करें"}/>
-          {!passage && <View style={s.segment}><Pressable onPress={()=>setTestament("all")} style={[s.segmentBtn,testament==="all"&&s.segmentActive]}><Text style={s.segmentText}>सभी</Text></Pressable><Pressable onPress={()=>setTestament("old_testament")} style={[s.segmentBtn,testament==="old_testament"&&s.segmentActive]}><Text style={s.segmentText}>पुराना नियम</Text></Pressable><Pressable onPress={()=>setTestament("new_testament")} style={[s.segmentBtn,testament==="new_testament"&&s.segmentActive]}><Text style={s.segmentText}>नया नियम</Text></Pressable></View>}
-          {!passage && <TextInput value={filter} onChangeText={setFilter} placeholder="पुस्तक खोजें / Search books" placeholderTextColor={C.muted} style={s.input}/>}
-          {!passage && <View style={s.bookGrid}>{filteredBooks.map(item=><Pressable key={item.id} style={s.bookTile} onPress={()=>{setBook(item);setPassage(null);setChapter(1);}}><Text style={s.bookHindi}>{item.hindi}</Text><Text style={s.bookEnglish}>{item.english}</Text><Text style={s.bookCount}>{item.chapters} अध्याय</Text><View style={s.tileAction}><Text style={s.tileActionText}>अध्याय चुनें →</Text></View></Pressable>)}</View>}
-          {!passage && catalog.length>0 && <Text style={s.muted}>आपकी चुनी हुई Bible Version में {catalog.length} पुस्तकें उपलब्ध हैं।</Text>}
-          {!passage && <View style={s.chapterPicker}><Text style={s.sectionTitle}>{book.hindi} — अध्याय चुनें</Text><View style={s.numberGrid}>{Array.from({length:chapterCount},(_,i)=>i+1).map(n=><Pressable key={n} style={s.number} onPress={()=>openChapter(book,n)}><Text style={s.numberText}>{n}</Text></Pressable>)}</View></View>}
-          {passage && <><View style={s.readerTools}><Action label="← पुस्तकें" secondary onPress={()=>setPassage(null)}/><Action label={currentSaved?"★ Saved":"☆ Bookmark"} onPress={toggleBookmark}/></View><View style={s.chapterNav}><Action label="← पिछला" secondary onPress={()=>openChapter(book,Math.max(1,chapter-1))}/><Text style={s.chapterLabel}>अध्याय {chapter}</Text><Action label="अगला →" secondary onPress={()=>openChapter(book,Math.min(chapterCount,chapter+1))}/></View><View style={s.reader}><Text style={[s.passageText,{fontSize,lineHeight:fontSize*1.85}]}>{passage.content}</Text><Text style={s.copyright}>{passage.reference} • {passage.copyright || "Selected translation: see its licence and attribution details in Settings."}</Text></View><View style={s.readerTools}><Action label="A−" secondary onPress={()=>{const v=Math.max(15,fontSize-1);setFontSize(v);storage.setFontSize(v);}}/><Action label="A+" secondary onPress={()=>{const v=Math.min(28,fontSize+1);setFontSize(v);storage.setFontSize(v);}}/><Action label="✎ नोट" onPress={()=>setShowNote(v=>!v)}/></View>{showNote&&<View style={s.noteBox}><Text style={s.sectionTitle}>मेरे नोट्स</Text><TextInput value={noteText} onChangeText={setNoteText} multiline placeholder="इस अध्याय के बारे में अपने विचार लिखें..." placeholderTextColor={C.muted} style={[s.input,{height:110,textAlignVertical:"top"}]}/><Action label="नोट सेव करें" onPress={async()=>{const next={...notes,[`${book.id}.${chapter}`]:noteText};setNotes(next);await storage.setNotes(next);Alert.alert("सेव हो गया","आपका नोट इस डिवाइस पर सेव है।");}}/></View>}</>}
-          {loading&&<ActivityIndicator color={C.gold} size="large" style={{margin:20}}/>}
-          {!!error&&<Text style={s.error}>{error}</Text>}
-        </>}
+      {tab==="settings"&&<>
+        <Text style={s.pageHeading}>सेटिंग्स</Text><Text style={s.muted}>अपना हिंदी Bible अनुवाद चुनें और पढ़ने की सेटिंग बदलें।</Text>
+        <View style={s.settingsCard}>
+          <Text style={s.sectionTitle}>Hindi Bible Translation</Text>
+          <Text style={s.muted}>उपलब्ध हिंदी अनुवाद इंटरनेट से लोड करें। हर अनुवाद का अपना लाइसेंस हो सकता है।</Text>
+          <Button label="हिंदी अनुवाद खोजें" onPress={async()=>{setLoading(true);try{const list=await getHindiBibles();setVersions(list);if(!list.length)Alert.alert("अनुवाद नहीं मिला","अभी API में Hindi अनुवाद उपलब्ध नहीं मिला।");}catch(e){Alert.alert("API Error",e instanceof Error?e.message:"अनुरोध विफल");}finally{setLoading(false);}}}/>
+          {versions.map(v=><Pressable key={v.id} onPress={()=>setBibleId(v.id)} style={[s.versionRow,bibleId===v.id&&s.versionSelected]}><Text style={s.cardTitle}>{v.localized_title||v.title}</Text><Text style={s.muted}>{v.localized_abbreviation||v.abbreviation||v.id}</Text>{!!(v.licenseNotice||v.copyright)&&<Text style={s.copyright}>{v.licenseNotice||v.copyright}</Text>}{!!v.licenseUrl&&<Text style={s.linkText}>लाइसेंस: {v.licenseUrl}</Text>}</Pressable>)}
+          <Button label="चयन सेव करें" onPress={saveSettings} disabled={!bibleId}/>
+        </View>
+        <View style={s.settingsCard}><Text style={s.sectionTitle}>आवाज़ और पढ़ना</Text><Text style={s.muted}>वचन सुनाने के लिए Android की Hindi Text-to-Speech आवाज़ का उपयोग होगा। यदि आवाज़ न आए तो फोन की Text-to-Speech सेटिंग में Hindi voice डाउनलोड करें।</Text><View style={s.inlineActions}><Button label="आवाज़ जाँचें" onPress={()=>Speech.speak("आदि में परमेश्वर ने आकाश और पृथ्वी की सृष्टि की।",{language:"hi-IN",rate:.88})}/><Button label="आवाज़ रोकें" outline onPress={stopSpeech}/></View><Text style={s.muted}>अक्षर आकार: {fontSize}</Text><View style={s.inlineActions}><Button label="A−" outline onPress={()=>{const n=Math.max(16,fontSize-1);setFontSize(n);storage.setFontSize(n);}}/><Button label="A+" outline onPress={()=>{const n=Math.min(32,fontSize+1);setFontSize(n);storage.setFontSize(n);}}/></View></View>
+        {loading&&<ActivityIndicator color={C.blue} style={{margin:16}}/>}
+      </>}
+    </ScrollView>
 
-        {tab==="search" && <>
-          <Header title="बाइबल में खोजें" subtitle="किसी शब्द, विषय या वचन को खोजें।"/>
-          <TextInput value={query} onChangeText={setQuery} placeholder="जैसे: John 3:16 या JHN.3.16" placeholderTextColor={C.muted} style={s.input} onSubmitEditing={runSearch}/>
-          <Action label="Reference खोलें  →" onPress={runSearch}/>
-          {loading&&<ActivityIndicator color={C.gold} size="large" style={{margin:20}}/>}
-          {!!error&&<Text style={s.error}>{error}</Text>}
-          {results.map((r,i)=><Pressable key={r.reference+i} style={s.resultCard} onPress={()=>openSearchResult(r.reference)}><Text style={s.cardKicker}>{r.reference}</Text><Text style={s.resultText}>{r.passage?.content || "वचन खोलने के लिए टैप करें"}</Text></Pressable>)}
-          {!results.length&&!loading&&<Text style={s.empty}>Search results यहाँ दिखाई देंगे।</Text>}
-        </>}
+    <View style={s.tabbar}>
+      {([{id:"home",icon:"⌂",label:"होम"},{id:"bible",icon:"▤",label:"बाइबल"},{id:"search",icon:"⌕",label:"खोजें"},{id:"saved",icon:"☆",label:"सेव"},{id:"settings",icon:"⚙",label:"सेटिंग"}] as {id:Tab;icon:string;label:string}[]).map(x=><Pressable key={x.id} onPress={()=>changeTab(x.id)} style={s.tab}><Text style={[s.tabIcon,tab===x.id&&s.tabIconActive]}>{x.icon}</Text><Text style={[s.tabLabel,tab===x.id&&s.tabLabelActive]}>{x.label}</Text></Pressable>)}
+    </View>
 
-        {tab==="saved" && <>
-          <Header title="आपकी लाइब्रेरी" subtitle="आपके सेव किए गए वचन और पढ़ने का इतिहास।"/>
-          <Text style={s.sectionTitle}>Bookmarks ({bookmarks.length})</Text>
-          {bookmarks.map(item=><Pressable key={item.id} style={s.savedRow} onPress={()=>openChapter(BOOKS.find(x=>x.id===item.bookId)||BOOKS[42],item.chapter)}><Text style={s.savedTitle}>☆  {item.reference}</Text><Text style={s.muted}>अध्याय खोलें →</Text></Pressable>)}
-          {!bookmarks.length&&<Text style={s.empty}>अभी कोई bookmark सेव नहीं है।</Text>}
-          <Text style={s.sectionTitle}>हाल ही में पढ़े ({history.length})</Text>
-          {history.slice(0,15).map(item=><Pressable key={item.id} style={s.savedRow} onPress={()=>openChapter(BOOKS.find(x=>x.id===item.bookId)||BOOKS[42],item.chapter)}><Text style={s.savedTitle}>{item.reference}</Text><Text style={s.muted}>फिर से पढ़ें →</Text></Pressable>)}
-        </>}
+    <Modal visible={drawer} transparent animationType="slide" onRequestClose={()=>setDrawer(false)}>
+      <View style={s.modalShade}><Pressable style={s.scrim} onPress={()=>setDrawer(false)}/><View style={s.drawer}>
+        <View style={s.drawerHead}><Text style={s.drawerTitle}>Select the Book</Text><Pressable onPress={()=>setDrawer(false)}><Text style={s.closeText}>✕</Text></Pressable></View>
+        <TextInput value={filter} onChangeText={setFilter} placeholder="पुस्तक खोजें" placeholderTextColor="#718096" style={s.drawerSearch}/>
+        <ScrollView>{filteredBooks.map((b,i)=><Pressable key={b.id} onPress={()=>selectBook(b)} style={[s.drawerItem,b.id===book.id&&s.drawerItemActive]}><Text style={[s.drawerItemText,b.id===book.id&&{color:C.blue,fontWeight:"800"}]}>{i+1}. {b.hindi}</Text><Text style={s.drawerCount}>{b.chapters} अध्याय</Text></Pressable>)}</ScrollView>
+      </View></View>
+    </Modal>
 
-        {tab==="settings" && <>
-          <Header title="सेटिंग्स" subtitle="Bible content provider और reading preferences"/>
-          <View style={s.settingsCard}>
-            <Text style={s.sectionTitle}>Free Bible Data Provider</Text>
-            <Text style={s.muted}>यह API मुफ्त है। कोई API Key, अकाउंट या पेमेंट नहीं चाहिए। उपलब्ध हिंदी अनुवाद इंटरनेट से लोड करें।</Text>
-            <Action label="हिंदी Bible Versions खोजें" onPress={async()=>{try{const list=await getHindiBibles();setVersions(list);if(!list.length)Alert.alert("हिंदी अनुवाद नहीं मिला","Provider की उपलब्ध सूची में Hindi भाषा का अनुवाद नहीं मिला। बाद में दोबारा प्रयास करें।");}catch(e){Alert.alert("API Error",e instanceof Error?e.message:"Request failed");}}}/>
-            {versions.map(v=><Pressable key={v.id} style={[s.versionRow,bibleId===v.id&&s.versionSelected]} onPress={()=>setBibleId(v.id)}><Text style={s.savedTitle}>{v.localized_title||v.title}</Text><Text style={s.muted}>ID: {v.id} • {v.localized_abbreviation||v.abbreviation}</Text>{!!(v.licenseNotice||v.copyright)&&<Text style={s.copyright}>{v.licenseNotice||v.copyright}</Text>}{!!v.licenseUrl&&<Text style={s.helpLink}>Licence: {v.licenseUrl}</Text>}{!!v.license?.commercialUse&&<Text style={s.copyright}>Commercial use: {v.license.commercialUse}</Text>}</Pressable>)}
-            
-            <Action label="सेटिंग्स सेव करें" onPress={saveSettings}/>
-            <Text style={s.helpLink}>Free API documentation: bible.helloao.org</Text>
-          </View>
-          <View style={s.settingsCard}><Text style={s.sectionTitle}>Reading Preferences</Text><Text style={s.muted}>अक्षरों का आकार: {fontSize}</Text><View style={s.readerTools}><Action label="A−" secondary onPress={()=>{const v=Math.max(15,fontSize-1);setFontSize(v);storage.setFontSize(v);}}/><Action label="A+" secondary onPress={()=>{const v=Math.min(28,fontSize+1);setFontSize(v);storage.setFontSize(v);}}/></View></View>
-          <Text style={s.copyright}>Hindi Bible • Version 1.0.0{"\n"}Scripture text is provided by the selected publisher and remains subject to its license and attribution requirements.</Text>
-        </>}
-      </ScrollView>
-      <View style={s.tabbar}>
-        {([{id:"home",icon:"⌂",label:"होम"},{id:"bible",icon:"▤",label:"बाइबल"},{id:"search",icon:"⌕",label:"खोजें"},{id:"saved",icon:"☆",label:"सेव"},{id:"settings",icon:"⚙",label:"सेटिंग"}] as {id:Tab;icon:string;label:string}[]).map(item=><Pressable key={item.id} style={s.tab} onPress={()=>{setTab(item.id);setPassage(null);setError("");}}><Text style={[s.tabIcon,tab===item.id&&{color:C.gold}]}>{item.icon}</Text><Text style={[s.tabLabel,tab===item.id&&{color:C.gold}]}>{item.label}</Text></Pressable>)}
-      </View>
-    </SafeAreaView>
-  );
+    <Modal visible={picker} transparent animationType="fade" onRequestClose={()=>setPicker(false)}>
+      <View style={s.modalShade}><View style={s.pickerPanel}>
+        <View style={s.pickerHead}><Pressable onPress={()=>setPicker(false)}><Text style={s.closeText}>‹</Text></Pressable><Text style={s.pickerTitle}>{book.hindi} {chapter}</Text><Pressable onPress={()=>setPicker(false)}><Text style={s.cancelText}>Cancel</Text></Pressable></View>
+        <View style={s.pickerTabs}>{(["BOOK","CHAPTER","VERSE"] as PickerTab[]).map(t=><Pressable key={t} onPress={()=>setPickerTab(t)} style={[s.pickerTab,pickerTab===t&&s.pickerTabActive]}><Text style={[s.pickerTabText,pickerTab===t&&{color:C.ink}]}>{t}</Text></Pressable>)}</View>
+        {pickerTab==="BOOK"&&<ScrollView><View style={s.pickerBookList}>{BOOKS.map((b,i)=><Pressable key={b.id} onPress={()=>selectBook(b)} style={s.pickerBookItem}><Text style={s.pickerBookText}>{i+1}. {b.hindi}</Text><Text style={s.drawerCount}>{b.chapters} अध्याय</Text></Pressable>)}</View></ScrollView>}
+        {pickerTab==="CHAPTER"&&<ScrollView contentContainerStyle={s.pickerGrid}>{chapterNumbers.map(n=><Pressable key={n} onPress={()=>openChapter(book,n)} style={[s.pickerNumber,n===chapter&&s.pickerNumberActive]}><Text style={[s.pickerNumberText,n===chapter&&{color:C.white}]}>{n}</Text></Pressable>)}</ScrollView>}
+        {pickerTab==="VERSE"&&<ScrollView contentContainerStyle={s.pickerGrid}>{(verseNumbers.length?verseNumbers:Array.from({length:31},(_,i)=>i+1)).map(n=><Pressable key={n} onPress={()=>{setPicker(false);if(passage){setSpeechVerse(Math.max(0,verseList.findIndex(v=>v.number===n)));}}} style={[s.pickerNumber,n===speechVerse+1&&s.pickerNumberActive]}><Text style={[s.pickerNumberText,n===speechVerse+1&&{color:C.white}]}>{n}</Text></Pressable>)}</ScrollView>}
+      </View></View>
+    </Modal>
+  </SafeAreaView>;
 }
 
 const s=StyleSheet.create({
-  safe:{flex:1,backgroundColor:C.bg},topbar:{height:58,paddingHorizontal:20,flexDirection:"row",alignItems:"center",borderBottomWidth:1,borderBottomColor:C.line},logo:{color:C.gold,fontSize:25,marginRight:9},topbarName:{color:C.cream,fontWeight:"800",letterSpacing:2,fontSize:14},topbarTag:{color:C.muted,fontSize:9,letterSpacing:1.5,marginLeft:"auto"},body:{flex:1},content:{padding:20,paddingBottom:36},header:{marginTop:8,marginBottom:22},brand:{color:C.gold,fontSize:10,letterSpacing:3,fontWeight:"800",marginBottom:12},pageTitle:{color:C.cream,fontSize:29,fontWeight:"800"},subtitle:{color:C.muted,fontSize:13,marginTop:7,lineHeight:20},hero:{backgroundColor:"#1D3047",borderRadius:22,padding:23,borderWidth:1,borderColor:"#43546A",marginBottom:28},eyebrow:{color:C.gold,fontSize:10,fontWeight:"800",letterSpacing:2},heroRef:{color:C.cream,fontSize:24,fontWeight:"800",marginTop:14},heroVerse:{color:"#F4EBDD",fontSize:18,lineHeight:31,marginTop:13},heroFoot:{color:C.muted,fontSize:11,marginTop:16},sectionTitle:{color:C.cream,fontSize:18,fontWeight:"800",marginTop:22,marginBottom:13},resumeCard:{backgroundColor:C.panel,borderRadius:16,padding:18,flexDirection:"row",alignItems:"center",justifyContent:"space-between",borderWidth:1,borderColor:C.line},cardKicker:{color:C.gold,fontSize:9,letterSpacing:1.5,fontWeight:"800"},cardTitle:{color:C.cream,fontSize:18,fontWeight:"800",marginTop:6},muted:{color:C.muted,fontSize:12,marginTop:5,lineHeight:19},arrow:{color:C.gold,fontSize:25},twoCards:{flexDirection:"row",gap:12},testamentCard:{flex:1,backgroundColor:C.panel,borderRadius:16,padding:16,borderWidth:1,borderColor:C.line,minHeight:112},quickRow:{flexDirection:"row",flexWrap:"wrap",gap:8},quick:{backgroundColor:C.panel,borderRadius:12,padding:12,borderWidth:1,borderColor:C.line,minWidth:"47%",flexGrow:1},quickName:{color:C.cream,fontWeight:"700",fontSize:15},segment:{flexDirection:"row",backgroundColor:C.panel,borderRadius:12,padding:4,marginBottom:14},segmentBtn:{flex:1,padding:10,alignItems:"center",borderRadius:9},segmentActive:{backgroundColor:C.gold},segmentText:{color:C.cream,fontSize:11,fontWeight:"700"},input:{backgroundColor:C.panel,color:C.cream,borderRadius:13,paddingHorizontal:15,paddingVertical:13,borderWidth:1,borderColor:C.line,fontSize:15,marginBottom:12},bookGrid:{flexDirection:"row",flexWrap:"wrap",gap:10},bookTile:{width:"48%",backgroundColor:C.panel,borderRadius:15,padding:14,borderWidth:1,borderColor:C.line,minHeight:125},bookHindi:{color:C.cream,fontSize:16,fontWeight:"800"},bookEnglish:{color:C.muted,fontSize:11,marginTop:4},bookCount:{color:C.gold,fontSize:10,marginTop:8},tileAction:{borderTopWidth:1,borderTopColor:C.line,marginTop:10,paddingTop:8},tileActionText:{color:C.gold,fontSize:11,fontWeight:"700"},chapterPicker:{marginTop:4},numberGrid:{flexDirection:"row",flexWrap:"wrap",gap:9},number:{width:46,height:46,alignItems:"center",justifyContent:"center",borderRadius:12,backgroundColor:C.panel,borderWidth:1,borderColor:C.line},numberText:{color:C.cream,fontWeight:"700",fontSize:15},readerTools:{flexDirection:"row",justifyContent:"space-between",gap:8,marginVertical:12},action:{backgroundColor:C.gold,paddingVertical:12,paddingHorizontal:14,borderRadius:12,alignItems:"center",justifyContent:"center",flex:1},actionSecondary:{backgroundColor:C.panel,borderWidth:1,borderColor:C.line},actionText:{color:C.bg,fontWeight:"800",fontSize:12},chapterNav:{flexDirection:"row",alignItems:"center",gap:8,marginVertical:10},chapterLabel:{color:C.cream,fontWeight:"800",flex:1,textAlign:"center"},reader:{backgroundColor:"#F4EBDD",borderRadius:18,padding:22,marginTop:8,marginBottom:10},passageText:{color:"#29251F",fontFamily:Platform.OS==="ios"?"Georgia":"serif"},copyright:{color:C.muted,fontSize:10,lineHeight:16,marginTop:12},noteBox:{backgroundColor:C.panel,borderRadius:16,padding:16,marginTop:10},error:{color:C.red,backgroundColor:"#3A2026",padding:13,borderRadius:12,marginVertical:12,lineHeight:20},empty:{color:C.muted,backgroundColor:C.panel,padding:16,borderRadius:12,lineHeight:20},resultCard:{backgroundColor:C.panel,borderRadius:14,padding:16,marginTop:12,borderWidth:1,borderColor:C.line},resultText:{color:C.cream,fontSize:15,lineHeight:24,marginTop:7},savedRow:{backgroundColor:C.panel,borderRadius:13,padding:15,marginBottom:9,borderWidth:1,borderColor:C.line},savedTitle:{color:C.cream,fontSize:15,fontWeight:"700"},settingsCard:{backgroundColor:C.panel,borderRadius:16,padding:16,borderWidth:1,borderColor:C.line,marginBottom:15},versionRow:{backgroundColor:C.panel2,padding:12,borderRadius:12,marginTop:8,borderWidth:1,borderColor:C.line},versionSelected:{borderColor:C.gold},helpLink:{color:C.gold,fontSize:12,marginTop:12},tabbar:{height:70,backgroundColor:"#101D2D",borderTopWidth:1,borderTopColor:C.line,flexDirection:"row",justifyContent:"space-around",alignItems:"center",paddingBottom:5},tab:{alignItems:"center",justifyContent:"center",flex:1},tabIcon:{color:C.muted,fontSize:22},tabLabel:{color:C.muted,fontSize:10,marginTop:3,fontWeight:"600"}
+ safe:{flex:1,backgroundColor:C.bg},topbar:{height:58,backgroundColor:C.pale,paddingHorizontal:17,flexDirection:"row",alignItems:"center",borderBottomWidth:1,borderBottomColor:"#C2DDF8"},brandMark:{fontSize:27,color:C.blue,marginRight:9},brandName:{fontSize:19,fontWeight:"900",color:C.ink,letterSpacing:.5},topIcon:{marginLeft:"auto",padding:8},topIconText:{fontSize:23,color:C.blue},body:{flex:1},content:{padding:17,paddingBottom:28},homeHero:{backgroundColor:"#0E6256",borderRadius:22,padding:22,marginBottom:23},homeEyebrow:{color:"#D8C18C",fontSize:10,fontWeight:"900",letterSpacing:2},homeTitle:{color:"#FFFFFF",fontSize:27,fontWeight:"900",lineHeight:36,marginTop:12},homeSub:{color:"#D6E9E3",fontSize:14,lineHeight:22,marginTop:8,marginBottom:18},button:{backgroundColor:C.blue,borderRadius:10,paddingVertical:13,paddingHorizontal:14,alignItems:"center",justifyContent:"center",flex:1,marginTop:9},buttonOutline:{backgroundColor:C.white,borderWidth:1,borderColor:C.blue},buttonText:{color:C.white,fontSize:13,fontWeight:"800"},dailyHead:{flexDirection:"row",justifyContent:"space-between",alignItems:"center"},sectionTitle:{fontSize:19,fontWeight:"900",color:C.ink,marginTop:21,marginBottom:12},kicker:{fontSize:10,color:C.blue,fontWeight:"900",letterSpacing:1.1},dailyCard:{backgroundColor:C.white,borderRadius:17,padding:18,borderWidth:1,borderColor:C.line,marginBottom:8},dailyRef:{fontSize:16,fontWeight:"900",color:C.blue},dailyText:{fontSize:17,lineHeight:28,color:C.ink,marginTop:9},dailyFoot:{fontSize:12,color:C.blue,fontWeight:"800",marginTop:13},resumeCard:{backgroundColor:C.white,borderRadius:16,padding:17,flexDirection:"row",alignItems:"center",borderWidth:1,borderColor:C.line},cardTitle:{fontSize:16,fontWeight:"900",color:C.ink},muted:{fontSize:12,color:C.muted,lineHeight:19,marginTop:5},cardArrow:{fontSize:26,color:C.blue,marginLeft:10},twoCards:{flexDirection:"row",gap:12},testamentCard:{flex:1,backgroundColor:C.pale,borderRadius:15,padding:16,minHeight:120,borderWidth:1,borderColor:"#BEDAF7"},cardEmoji:{fontSize:26,marginBottom:9},featureGrid:{flexDirection:"row",flexWrap:"wrap",gap:10},featureCard:{width:"31.5%",minHeight:100,backgroundColor:C.white,borderRadius:14,alignItems:"center",justifyContent:"center",padding:10,borderWidth:1,borderColor:C.line},featureIcon:{fontSize:28,color:C.ink},featureLabel:{fontSize:12,fontWeight:"800",color:C.ink,marginTop:9,textAlign:"center"},readerHeader:{backgroundColor:C.pale,marginHorizontal:-17,marginTop:-17,paddingHorizontal:10,paddingVertical:9,flexDirection:"row",alignItems:"center",gap:4,borderBottomWidth:1,borderColor:"#C6DDF5"},headerAction:{width:37,height:42,alignItems:"center",justifyContent:"center"},headerActionText:{fontSize:23,color:C.blue,fontWeight:"700"},bookChapter:{flex:1,alignItems:"center",paddingVertical:9,borderWidth:1,borderColor:C.blue,borderRadius:5},bookChapterText:{fontSize:16,color:C.blue,fontWeight:"800"},chapterStrip:{marginHorizontal:-17,backgroundColor:C.white,maxHeight:67,borderBottomWidth:1,borderColor:C.line},chapterStripContent:{paddingHorizontal:12,alignItems:"center",gap:10},chapterPill:{width:45,height:45,borderRadius:23,borderWidth:1.5,borderColor:"#263443",alignItems:"center",justifyContent:"center",marginVertical:9},chapterPillActive:{backgroundColor:C.blue,borderColor:C.blue},chapterPillText:{fontSize:18,color:C.ink},chapterPillTextActive:{color:C.white},readerActions:{flexDirection:"row",alignItems:"center",justifyContent:"space-between",marginTop:15},readerTitle:{fontSize:22,fontWeight:"900",color:C.ink},inlineActions:{flexDirection:"row",gap:9,alignItems:"center"},inlineActionText:{color:C.blue,fontSize:12,fontWeight:"900"},verseList:{backgroundColor:C.white,paddingHorizontal:14,paddingVertical:8,borderRadius:13,marginTop:12,borderWidth:1,borderColor:C.line},verseRow:{flexDirection:"row",alignItems:"flex-start",paddingVertical:13,borderBottomWidth:1,borderBottomColor:"#EDF1F5",gap:10},verseActive:{backgroundColor:"#E7F2FF",borderRadius:8,paddingHorizontal:7},verseNumber:{fontSize:16,color:C.blue,fontWeight:"900",minWidth:20,marginTop:3},verseText:{flex:1,color:"#141A21",fontSize:21,lineHeight:36},copyright:{fontSize:10,color:C.muted,lineHeight:16,paddingVertical:12},chapterFooter:{flexDirection:"row",gap:10,marginTop:10},emptyBox:{backgroundColor:C.white,padding:20,borderRadius:14,marginTop:16,borderWidth:1,borderColor:C.line},emptyTitle:{fontSize:18,fontWeight:"900",color:C.ink},error:{color:C.red,backgroundColor:"#FCEBEC",padding:13,borderRadius:10,marginTop:12,lineHeight:20},pageHeading:{fontSize:27,fontWeight:"900",color:C.ink,marginTop:9,marginBottom:8},searchInput:{backgroundColor:C.white,borderWidth:1,borderColor:C.line,borderRadius:12,padding:14,color:C.ink,fontSize:15,marginTop:17,marginBottom:8},resultCard:{backgroundColor:C.white,borderWidth:1,borderColor:C.line,borderRadius:13,padding:15,marginTop:12},resultText:{fontSize:15,color:C.ink,lineHeight:24,marginTop:8},savedRow:{backgroundColor:C.white,borderRadius:13,padding:15,marginBottom:9,borderWidth:1,borderColor:C.line},settingsCard:{backgroundColor:C.white,borderRadius:16,padding:16,borderWidth:1,borderColor:C.line,marginTop:16},versionRow:{backgroundColor:"#F4F8FC",padding:13,borderRadius:11,marginTop:9,borderWidth:1,borderColor:C.line},versionSelected:{borderColor:C.blue,borderWidth:2},linkText:{fontSize:11,color:C.blue,marginTop:8},readerActions:{flexDirection:"row",alignItems:"center",justifyContent:"space-between",marginTop:15},noteCard:{backgroundColor:C.white,borderRadius:14,padding:14,marginTop:12},noteInput:{minHeight:90,color:C.ink,textAlignVertical:"top",padding:10},tabbar:{height:67,backgroundColor:C.white,borderTopWidth:1,borderTopColor:C.line,flexDirection:"row",alignItems:"center",justifyContent:"space-around"},tab:{flex:1,alignItems:"center",justifyContent:"center"},tabIcon:{fontSize:22,color:C.muted},tabIconActive:{color:C.blue},tabLabel:{fontSize:10,color:C.muted,marginTop:3,fontWeight:"700"},tabLabelActive:{color:C.blue},modalShade:{flex:1,backgroundColor:"rgba(0,0,0,.48)",flexDirection:"row"},scrim:{flex:1},drawer:{width:"84%",maxWidth:390,backgroundColor:C.white},drawerHead:{height:58,backgroundColor:"#1684F5",paddingHorizontal:16,flexDirection:"row",alignItems:"center",justifyContent:"space-between"},drawerTitle:{color:C.white,fontSize:19,fontWeight:"900"},closeText:{fontSize:25,color:C.blue,fontWeight:"700"},drawerSearch:{margin:12,padding:12,borderRadius:8,borderWidth:1,borderColor:C.line,color:C.ink},drawerItem:{paddingHorizontal:17,paddingVertical:15,borderBottomWidth:1,borderBottomColor:"#E3E7EC",flexDirection:"row",justifyContent:"space-between",alignItems:"center"},drawerItemActive:{backgroundColor:"#E8F3FF"},drawerItemText:{fontSize:16,color:C.ink},drawerCount:{fontSize:11,color:C.muted},pickerPanel:{backgroundColor:C.white,width:"100%",maxHeight:"88%",marginTop:"auto",borderTopLeftRadius:18,borderTopRightRadius:18,overflow:"hidden"},pickerHead:{height:58,backgroundColor:C.pale,paddingHorizontal:15,flexDirection:"row",alignItems:"center",justifyContent:"space-between"},pickerTitle:{fontSize:19,color:C.blue,fontWeight:"800"},cancelText:{fontSize:15,color:C.blue,fontWeight:"700"},pickerTabs:{height:48,backgroundColor:"#1684F5",flexDirection:"row"},pickerTab:{flex:1,alignItems:"center",justifyContent:"center",borderBottomWidth:3,borderBottomColor:"transparent"},pickerTabActive:{borderBottomColor:"#16A05A"},pickerTabText:{fontSize:13,color:"#063B70",fontWeight:"800"},pickerBookList:{paddingBottom:20},pickerBookItem:{paddingHorizontal:18,paddingVertical:14,borderBottomWidth:1,borderBottomColor:"#D5D5D5",flexDirection:"row",justifyContent:"space-between"},pickerBookText:{fontSize:17,color:C.ink},pickerGrid:{flexDirection:"row",flexWrap:"wrap",justifyContent:"space-around",padding:10},pickerNumber:{width:"18%",height:64,alignItems:"center",justifyContent:"center",marginVertical:4,borderRadius:32},pickerNumberActive:{backgroundColor:"#328FE5"},pickerNumberText:{fontSize:19,color:C.ink}
 });
