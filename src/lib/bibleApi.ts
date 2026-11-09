@@ -89,7 +89,7 @@ export async function getPassage(_unusedKey: string, bibleId: string, passageId:
   if (!verses.length) throw new Error("इस अनुवाद में यह अध्याय या वचन उपलब्ध नहीं है।");
   const bookName = result.book?.commonName || result.book?.name || bookId;
   const reference = verseNumber === null ? `${bookName} ${chapterNumber}` : `${bookName} ${chapterNumber}:${verseNumber}`;
-  return { id: passageId, content: verses.join("\n\n"), reference };
+  return { id: passageId, content: verses.join("\n\n"), reference, copyright: result.translation?.licenseNotice || result.translation?.copyright || "" };
 }
 
 // The provider has no global full-text search endpoint. This supports exact
