@@ -200,14 +200,7 @@ export default function App() {
       </>}
 
       {tab==="settings"&&<>
-        <Text style={s.pageHeading}>सेटिंग्स</Text><Text style={s.muted}>अपना हिंदी Bible अनुवाद चुनें और पढ़ने की सेटिंग बदलें।</Text>
-        <View style={s.settingsCard}>
-          <Text style={s.sectionTitle}>Hindi Bible Translation</Text>
-          <Text style={s.muted}>उपलब्ध हिंदी अनुवाद इंटरनेट से लोड करें। हर अनुवाद का अपना लाइसेंस हो सकता है।</Text>
-          <Button label="हिंदी अनुवाद खोजें" onPress={async()=>{setLoading(true);try{const list=await getHindiBibles();setVersions(list);if(!list.length)Alert.alert("अनुवाद नहीं मिला","अभी API में Hindi अनुवाद उपलब्ध नहीं मिला।");}catch(e){Alert.alert("API Error",e instanceof Error?e.message:"अनुरोध विफल");}finally{setLoading(false);}}}/>
-          {versions.map(v=><Pressable key={v.id} onPress={()=>setBibleId(v.id)} style={[s.versionRow,bibleId===v.id&&s.versionSelected]}><Text style={s.cardTitle}>{v.localized_title||v.title}</Text><Text style={s.muted}>{v.localized_abbreviation||v.abbreviation||v.id}</Text>{!!(v.licenseNotice||v.copyright)&&<Text style={s.copyright}>{v.licenseNotice||v.copyright}</Text>}{!!v.licenseUrl&&<Text style={s.linkText}>लाइसेंस: {v.licenseUrl}</Text>}</Pressable>)}
-          <Button label="चयन सेव करें" onPress={saveSettings} disabled={!bibleId}/>
-        </View>
+        <Text style={s.pageHeading}>सेटिंग्स</Text><Text style={s.muted}>हिंदी अनुवाद अपने आप चुना जाता है। यहाँ आवाज़ और पढ़ने का आकार बदलें।</Text>
         <View style={s.settingsCard}><Text style={s.sectionTitle}>आवाज़ और पढ़ना</Text><Text style={s.muted}>वचन सुनाने के लिए Android की Hindi Text-to-Speech आवाज़ का उपयोग होगा। यदि आवाज़ न आए तो फोन की Text-to-Speech सेटिंग में Hindi voice डाउनलोड करें।</Text><View style={s.inlineActions}><Button label="आवाज़ जाँचें" onPress={()=>Speech.speak("आदि में परमेश्वर ने आकाश और पृथ्वी की सृष्टि की।",{language:"hi-IN",rate:.88})}/><Button label="आवाज़ रोकें" outline onPress={stopSpeech}/></View><Text style={s.muted}>अक्षर आकार: {fontSize}</Text><View style={s.inlineActions}><Button label="A−" outline onPress={()=>{const n=Math.max(16,fontSize-1);setFontSize(n);storage.setFontSize(n);}}/><Button label="A+" outline onPress={()=>{const n=Math.min(32,fontSize+1);setFontSize(n);storage.setFontSize(n);}}/></View></View>
         {loading&&<ActivityIndicator color={C.blue} style={{margin:16}}/>}
       </>}
