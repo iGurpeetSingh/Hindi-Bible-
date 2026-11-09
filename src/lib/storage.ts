@@ -19,8 +19,8 @@ async function readJSON<T>(key: string, fallback: T): Promise<T> {
 export const storage = {
   getApiKey: () => AsyncStorage.getItem(KEYS.apiKey),
   setApiKey: (value: string) => AsyncStorage.setItem(KEYS.apiKey, value.trim()),
-  getBibleId: async () => Number(await AsyncStorage.getItem(KEYS.bibleId)) || 0,
-  setBibleId: (value: number) => AsyncStorage.setItem(KEYS.bibleId, String(value)),
+  getBibleId: async () => (await AsyncStorage.getItem(KEYS.bibleId)) || "",
+  setBibleId: (value: string) => AsyncStorage.setItem(KEYS.bibleId, value),
   getBookmarks: () => readJSON<SavedReference[]>(KEYS.bookmarks, []),
   setBookmarks: (value: SavedReference[]) => AsyncStorage.setItem(KEYS.bookmarks, JSON.stringify(value)),
   getHistory: () => readJSON<SavedReference[]>(KEYS.history, []),
