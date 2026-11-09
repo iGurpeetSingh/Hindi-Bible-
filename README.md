@@ -2,32 +2,40 @@
 
 A mobile-first Hindi Bible reader built with React Native + Expo + TypeScript.
 
-## Current implementation
+## Scripture provider — free, no key required
+
+This app uses the **Free Use Bible API by AO Lab**:
+
+- API base: `https://bible.helloao.org/api`
+- No API key, account, or payment is required.
+- Discover available translations: `/available_translations.json`
+- List books: `/{translation}/books.json`
+- Fetch chapter text: `/{translation}/{book}/{chapter}.simple.json`
+- Official Hindi documentation: https://bible.helloao.org/docs/hi/
+- API code repository: https://github.com/HelloAOLab/bible-api
+
+The app's Settings screen discovers Hindi translations from the live provider list. Select a translation there before opening Scripture. Availability can change; the app does not hardcode an unverified Hindi translation ID.
+
+**Translation licensing:** the API provider and API code are MIT licensed, but each Bible translation has its own licence and attribution. Review the selected translation's `licenseUrl`, `licenseNotice`, and terms before distributing or monetizing the app. Do not assume every translation is public domain or commercially reusable.
+
+## Implemented
 
 - Complete 66-book Protestant Bible catalogue (39 Old Testament + 27 New Testament).
-- All 1,189 chapter references and chapter navigation.
-- Live passage text through the official YouVersion Platform API.
-- Hindi Bible version discovery and version selection.
-- Scripture search through YouVersion verse search.
+- Navigation for all 1,189 chapter references.
+- Live chapter text through the no-key Free Use Bible API.
+- Live Hindi translation discovery and selection.
+- Exact scripture-reference lookup (examples: `John 3:16`, `JHN.3.16`, `यूहन्ना 3:16`).
 - Daily verse (John 3:16) loaded from the selected translation.
 - Local bookmarks, reading history, personal notes and font-size preference.
 - Responsive dark navy / parchment reader UI.
 - EAS internal APK build profile.
 
-## Scripture data and licensing
+## Known MVP limitations
 
-The app does not fabricate Bible verses or bundle copyrighted translations. A licensed Bible version and an approved YouVersion Platform App Key are required to retrieve complete scripture text.
-
-1. Register the app at https://platform.youversion.com/
-2. Obtain an App Key and confirm that the desired Hindi Bible version is available to the app.
-3. Start the app, open Settings, paste the App Key, tap **हिंदी Bible Versions खोजें**, select a version, and save.
-4. The reader loads passages using the official endpoint:
-   `GET /v1/bibles/{bible_id}/passages/{passage_id}?format=text`
-5. Display the copyright / attribution supplied by the selected publisher in production. Review the current YouVersion Platform terms before public distribution.
-
-API documentation: https://developers.youversion.com/api/bibles
-Search documentation: https://developers.youversion.com/api/search
-Platform overview: https://developers.youversion.com/overview
+- Full-text keyword search across all verses is not provided by the selected static API; current Search supports exact Bible references. A local full-text index is a planned follow-up.
+- Audio playback, offline scripture downloads, verse-level highlights, user accounts/cloud sync, and production backend are planned next phases.
+- Scripture text requires an internet connection in this MVP.
+- Translation list results depend on what the provider currently publishes.
 
 ## Run locally
 
@@ -41,24 +49,14 @@ For Android emulator, press `a` in the Expo terminal.
 
 ## Build an installable APK
 
-Install and sign in to EAS CLI:
-
 ```bash
 npm install -g eas-cli
 eas login
-```
-
-Build:
-
-```bash
 eas build --platform android --profile preview
 ```
 
 The `preview` profile is configured to produce an installable APK. Download it from the EAS build page after the cloud build completes.
 
-## Important MVP boundaries
+## Security
 
-- Scripture text requires a licensed API key/version; the catalogue works without it.
-- Bookmarks, notes, font size and reading history are stored locally on the device.
-- Audio playback, offline scripture downloads, user accounts/cloud sync, verse-level highlights, and a production backend are planned next phases, not claimed as completed.
-- Never commit real API keys or signing credentials to this repository.
+No API key is used by the current provider integration. Never commit signing credentials or private tokens to this repository.
