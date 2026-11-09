@@ -21,7 +21,7 @@ function Header({title,subtitle}: {title:string;subtitle?:string}) {
 export default function App() {
   const [tab,setTab] = useState<Tab>("home");
   const [apiKey,setApiKey] = useState("");
-  const [bibleId,setBibleId] = useState(0);
+  const [bibleId,setBibleId] = useState("");
   const [versions,setVersions] = useState<ApiBible[]>([]);
   const [catalog,setCatalog] = useState<ApiIndexBook[]>([]);
   const [book,setBook] = useState<BibleBook>(BOOKS[42]);
@@ -49,10 +49,10 @@ export default function App() {
   },[]);
 
   useEffect(()=>{
-    if (!apiKey || !bibleId) return;
+    if (!bibleId) return;
     (async()=>{
       try {
-        const [idx,verse] = await Promise.all([getBibleIndex(apiKey,bibleId),getPassage(apiKey,bibleId,"JHN.3.16")]);
+        const [idx,verse] = await Promise.all([getBibleIndex("",bibleId),getPassage("",bibleId,"JHN.3.16")]);
         setCatalog(idx); setDaily(verse);
       } catch(e) { setError(e instanceof Error ? e.message : "Bible data load नहीं हुआ।"); }
     })();
@@ -65,10 +65,10 @@ export default function App() {
     setBook(nextBook); setChapter(nextChapter); setTab("bible"); setPassage(null); setError(""); setShowNote(false);
     const ref = `${nextBook.id}.${nextChapter}`;
     setNoteText(notes[ref] || "");
-    if (!apiKey || !bibleId) { setError("अध्याय पढ़ने के लिए Settings में YouVersion App Key और Hindi Bible Version जोड़ें।"); return; }
+    if (!bibleId) { setError("पहले Settings में उपलब्ध Hindi Bible Translation चुनें।"); return; }
     setLoading(true);
     try {
-      const data = await getPassage(apiKey,bibleId,ref);
+      const data = await getPassage("",bibleId,ref);
       setPassage(data);
       const item: SavedReference = {id:ref,reference:`${nextBook.hindi} ${nextChapter}`,bookId:nextBook.id,chapter:nextChapter,createdAt:Date.now()};
       const updated = [item,...history.filter(x=>x.id!==ref)].slice(0,40);
@@ -87,11 +87,11 @@ export default function App() {
   }
 
   async function runSearch() {
-    if (!apiKey || !bibleId) { Alert.alert("सेटअप जरूरी है","पहले Settings में API Key और Bible Version जोड़ें।"); return; }
+    if (!bibleId) { Alert.alert("सेटअप जरूरी है","पहले Settings में Hindi Bible Translation चुनें।"); return; }
     if (!query.trim()) return;
     setLoading(true); setError(""); setResults([]);
     try {
-      const refs = await searchVerses(apiKey,bibleId,query.trim());
+      const refs = await searchVerses("",bibleId,query.trim());
       const mapped = await Promise.all(refs.slice(0,12).map(async item=>{
         const id = item.reference || item.passage_id || "";
         let text: Passage|undefined;
@@ -104,7 +104,7 @@ export default function App() {
   }
 
   async function saveSettings() {
-    await storage.setApiKey(apiKey); await storage.setBibleId(bibleId);
+    await storage.setBibleId(bibleId);
     Alert.alert("सेटिंग सेव हुई","अब Bible tab में अध्याय खोलें।");
   }
 
@@ -155,8 +155,8 @@ export default function App() {
 
         {tab==="search" && <>
           <Header title="बाइबल में खोजें" subtitle="किसी शब्द, विषय या वचन को खोजें।"/>
-          <TextInput value={query} onChangeText={setQuery} placeholder="जैसे: प्रेम, विश्वास, John 3:16" placeholderTextColor={C.muted} style={s.input} onSubmitEditing={runSearch}/>
-          <Action label="वचन खोजें  →" onPress={runSearch}/>
+          <TextInput value={query} onChangeText={setQuery} placeholder="जैसे: John 3:16 या JHN.3.16" placeholderTextColor={C.muted} style={s.input} onSubmitEditing={runSearch}/>
+          <Action label="Reference खोलें  →" onPress={runSearch}/>
           {loading&&<ActivityIndicator color={C.gold} size="large" style={{margin:20}}/>}
           {!!error&&<Text style={s.error}>{error}</Text>}
           {results.map((r,i)=><Pressable key={r.reference+i} style={s.resultCard} onPress={()=>openSearchResult(r.reference)}><Text style={s.cardKicker}>{r.reference}</Text><Text style={s.resultText}>{r.passage?.content || "वचन खोलने के लिए टैप करें"}</Text></Pressable>)}
@@ -180,9 +180,9 @@ export default function App() {
             <TextInput value={apiKey} onChangeText={setApiKey} placeholder="YouVersion App Key" placeholderTextColor={C.muted} autoCapitalize="none" style={s.input} secureTextEntry/>
             <Action label="हिंदी Bible Versions खोजें" onPress={async()=>{try{const list=await getHindiBibles(apiKey);setVersions(list);if(!list.length)Alert.alert("कोई version नहीं मिला","इस App Key को Hindi Bible content की अनुमति नहीं मिली हो सकती।");}catch(e){Alert.alert("API Error",e instanceof Error?e.message:"Request failed");}}}/>
             {versions.map(v=><Pressable key={v.id} style={[s.versionRow,bibleId===v.id&&s.versionSelected]} onPress={()=>setBibleId(v.id)}><Text style={s.savedTitle}>{v.localized_title||v.title}</Text><Text style={s.muted}>ID: {v.id} • {v.localized_abbreviation||v.abbreviation}</Text>{!!v.copyright&&<Text style={s.copyright}>{v.copyright}</Text>}</Pressable>)}
-            <TextInput value={String(bibleId||"")} onChangeText={v=>setBibleId(Number(v)||0)} keyboardType="number-pad" placeholder="Bible Version ID" placeholderTextColor={C.muted} style={s.input}/>
+            
             <Action label="सेटिंग्स सेव करें" onPress={saveSettings}/>
-            <Text style={s.helpLink}>App Key और content access के लिए: platform.youversion.com</Text>
+            <Text style={s.helpLink}>Free API documentation: bible.helloao.org</Text>
           </View>
           <View style={s.settingsCard}><Text style={s.sectionTitle}>Reading Preferences</Text><Text style={s.muted}>अक्षरों का आकार: {fontSize}</Text><View style={s.readerTools}><Action label="A−" secondary onPress={()=>{const v=Math.max(15,fontSize-1);setFontSize(v);storage.setFontSize(v);}}/><Action label="A+" secondary onPress={()=>{const v=Math.min(28,fontSize+1);setFontSize(v);storage.setFontSize(v);}}/></View></View>
           <Text style={s.copyright}>Hindi Bible • Version 1.0.0{"\n"}Scripture text is provided by the selected publisher and remains subject to its license and attribution requirements.</Text>
