@@ -9,6 +9,8 @@ jobs:
   build-apk:
     name: Validate and build Android APK
     runs-on: ubuntu-latest
+    env:
+      EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
     permissions:
       contents: read
     steps:
@@ -30,7 +32,7 @@ jobs:
         run: npx expo export --platform android
 
       - name: Set up EAS
-        if: ${{ secrets.EXPO_TOKEN != '' }}
+        if: ${{ env.EXPO_TOKEN != '' }}
         uses: expo/expo-github-action@v8
         with:
           eas-version: latest
@@ -41,7 +43,7 @@ jobs:
         run: eas build --platform android --profile preview --non-interactive --wait
 
       - name: Explain missing Expo token
-        if: ${{ secrets.EXPO_TOKEN == '' }}
+        if: ${{ env.EXPO_TOKEN == '' }}
         run: |
           echo "::error::APK build needs an Expo access token. Add EXPO_TOKEN in GitHub repository Settings > Secrets and variables > Actions, then rerun this workflow."
           exit 1
