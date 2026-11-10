@@ -29,6 +29,9 @@ jobs:
       - name: TypeScript check
         run: npm run typecheck
 
+      - name: Generate Android launcher icon PNG
+        run: npx --yes sharp-cli -i assets/hindi-bible-icon.svg -o assets/hindi-bible-icon.png resize 1024 1024
+
       - name: Expo Android bundle check
         run: npx expo export --platform android
 
