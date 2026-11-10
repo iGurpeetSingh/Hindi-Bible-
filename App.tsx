@@ -48,10 +48,7 @@ export default function App() {
   const [results,setResults]=useState<{reference:string;passage?:Passage}[]>([]);
   const [bookmarks,setBookmarks]=useState<SavedReference[]>([]);
   const [history,setHistory]=useState<SavedReference[]>([]);
-  const [notes,setNotes]=useState<Record<string,string>>({});
   const [fontSize,setFontSize]=useState(16);
-  const [noteText,setNoteText]=useState("");
-  const [showNote,setShowNote]=useState(false);
   const [daily,setDaily]=useState<Passage|null>(null);
   const [drawer,setDrawer]=useState(false);
   const [picker,setPicker]=useState(false);
@@ -61,8 +58,8 @@ export default function App() {
 
   useEffect(()=>{
     (async()=>{
-      const [id,bm,hist,n,fz]=await Promise.all([storage.getBibleId(),storage.getBookmarks(),storage.getHistory(),storage.getNotes(),storage.getFontSize()]);
-      setBookmarks(bm);setHistory(hist);setNotes(n);setFontSize(18); if(fz!==18) await storage.setFontSize(18);
+      const [id,bm,hist,fz]=await Promise.all([storage.getBibleId(),storage.getBookmarks(),storage.getHistory(),storage.getFontSize()]);
+      setBookmarks(bm);setHistory(hist);setFontSize(18); if(fz!==18) await storage.setFontSize(18);
       if(id){setBibleId(id);} else { try { const available=await getHindiBibles(); const preferred=available[0]; if(preferred?.id){setBibleId(preferred.id);await storage.setBibleId(preferred.id);} else {setError('हिंदी बाइबल अनुवाद अभी उपलब्ध नहीं है। इंटरनेट कनेक्शन जाँचें।');} } catch(e) {setError(e instanceof Error?e.message:'हिंदी बाइबल लोड नहीं हुई।');} }
     })();
     return ()=>{Speech.stop();};
@@ -83,7 +80,7 @@ export default function App() {
   const filteredBooks=useMemo(()=>BOOKS.filter(b=>(testament==="all"||b.testament===testament)&&(b.hindi.toLowerCase().includes(filter.toLowerCase())||b.english.toLowerCase().includes(filter.toLowerCase()))),[filter,testament]);
 
   async function openChapter(nextBook:BibleBook,nextChapter:number) {
-    setBook(nextBook);setChapter(nextChapter);setTab("bible");setDrawer(false);setPicker(false);setPassage(null);setError("");setShowNote(false);setNoteText(notes[`${nextBook.id}.${nextChapter}`]||"");
+    setBook(nextBook);setChapter(nextChapter);setTab("bible");setDrawer(false);setPicker(false);setPassage(null);setError("");
     await Speech.stop();setSpeaking(false);
     if(!bibleId){setError("पहले Settings में जाकर Hindi Bible Translation चुनें।");return;}
     setLoading(true);
