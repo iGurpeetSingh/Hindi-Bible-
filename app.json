@@ -2,16 +2,18 @@
   "expo": {
     "name": "Hindi Bible",
     "slug": "hindi-bible",
-    "version": "1.0.1",
+    "version": "1.0.2",
     "orientation": "portrait",
     "userInterfaceStyle": "dark",
     "newArchEnabled": true,
     "android": {
       "package": "com.igurpeetsingh.hindibible",
-      "versionCode": 2,
+      "versionCode": 3,
       "adaptiveIcon": {
-        "backgroundColor": "#101B2B"
+        "foregroundImage": "./assets/hindi-bible-icon.png",
+        "backgroundColor": "#FFFFFF"
       }
-    }
+    },
+    "icon": "./assets/hindi-bible-icon.png"
   }
 }
