@@ -180,12 +180,7 @@ export default function App() {
           </Pressable>)}
           <Text style={s.copyright}>{passage.reference} • {passage.copyright||"अनुवाद का लाइसेंस और श्रेय Settings में देखें।"}</Text>
         </View>}
-        <View style={s.chapterFooter}>
-          <Button label="← पिछला अध्याय" outline onPress={()=>openChapter(book,Math.max(1,chapter-1))}/>
-          <Button label="अगला अध्याय →" onPress={()=>openChapter(book,Math.min(chapterCount,chapter+1))}/>
-        </View>
-        <View style={s.readerActions}><Text style={s.sectionTitle}>पढ़ने की सुविधा</Text><View style={s.inlineActions}><Button label="A−" outline onPress={()=>{const n=Math.max(16,fontSize-1);setFontSize(n);storage.setFontSize(n);}}/><Button label="A+" outline onPress={()=>{const n=Math.min(32,fontSize+1);setFontSize(n);storage.setFontSize(n);}}/><Button label="नोट लिखें" onPress={()=>setShowNote(x=>!x)}/></View></View>
-        {showNote&&<View style={s.noteCard}><TextInput value={noteText} onChangeText={setNoteText} multiline placeholder="इस अध्याय पर अपने विचार लिखें..." placeholderTextColor={C.muted} style={s.noteInput}/><Button label="नोट सेव करें" onPress={async()=>{const n={...notes,[`${book.id}.${chapter}`]:noteText};setNotes(n);await storage.setNotes(n);Alert.alert("सेव हो गया","आपका नोट इस डिवाइस पर सेव है।");}}/></View>}
+
       </>}
 
       {tab==="search"&&<>
