@@ -361,9 +361,9 @@ export default function App() {
           <View style={s.featureGrid}>
             {[
               {icon:"🎧",label:"ऑडियो बाइबल",description:"वचन को सुनें",action:"audio",accent:"#20E5A4",halo:"#073F35"},
-              {icon:"🔎",label:"वचन खोजें",description:"किसी भी वचन को खोजें",action:"search",accent:"#42D8F5",halo:"#102F4D"},
-              {icon:"☆",label:"बुकमार्क",description:"पसंदीदा वचन सहेजें",action:"saved",accent:"#F4C95D",halo:"#4A3A13"},
-              {icon:"🗓",label:"पढ़ने की योजना",description:"नियमित बाइबल अध्ययन",action:"soon",accent:"#C68BFF",halo:"#392052"},
+              {icon:"🔍",label:"वचन खोजें",description:"किसी भी वचन को खोजें",action:"search",accent:"#42D8F5",halo:"#102F4D"},
+              {icon:"⭐",label:"बुकमार्क",description:"पसंदीदा वचन सहेजें",action:"saved",accent:"#F4C95D",halo:"#4A3A13"},
+              {icon:"🗓️",label:"पढ़ने की योजना",description:"नियमित बाइबल अध्ययन",action:"soon",accent:"#C68BFF",halo:"#392052"},
               {icon:"📝",label:"नोट्स",description:"अपने विचार लिखें",action:"soon",accent:"#F5B64D",halo:"#4A3216"},
               {icon:"💬",label:"बाइबल अध्ययन",description:"गहराई से समझें",action:"soon",accent:"#41D8F3",halo:"#123B50"}
             ].map(item=>{
@@ -378,7 +378,7 @@ export default function App() {
               if(item.action==="audio") return <Pressable key={item.label} style={[s.featureCard,{borderColor:"#20E5A4",shadowColor:"#20E5A4"}]} onPress={()=>openAudioChapter(book,chapter)} accessibilityRole="button">{cardContent}</Pressable>;
               if(item.action==="search") return <Pressable key={item.label} style={[s.featureCard,{borderColor:"#42D8F5",shadowColor:"#42D8F5"}]} onPress={()=>changeTab("search")} accessibilityRole="button">{cardContent}</Pressable>;
               if(item.action==="saved") return <Pressable key={item.label} style={[s.featureCard,{borderColor:"#F4C95D",shadowColor:"#F4C95D"}]} onPress={()=>changeTab("saved")} accessibilityRole="button">{cardContent}</Pressable>;
-              return <View key={item.label} style={s.featureCard}>{cardContent}</View>;
+              return <View key={item.label} style={[s.featureCard,{borderColor:item.accent,shadowColor:item.accent}]}>{cardContent}</View>;
             })}
           </View>
           <View style={s.homeFooterDecor}><View style={s.homeFooterLine}/><Text style={s.homeFooterCross}>✝</Text><View style={s.homeFooterLine}/></View><Text style={s.homeFooter}>परमेश्वर का वचन आपके जीवन में शांति और आशा लाए।</Text>
