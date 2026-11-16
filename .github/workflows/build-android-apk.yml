@@ -1,9 +1,7 @@
 name: Build Hindi Bible APK
-run-name: Android APK build (Owner token retry)
+run-name: Manual Android APK build
 
 on:
-  push:
-    branches: [main]
   workflow_dispatch:
 
 jobs:
@@ -40,7 +38,7 @@ jobs:
         uses: expo/expo-github-action@v8
         with:
           eas-version: latest
-          token: ${{ secrets.EXPO_TOKEN }}
+          token: ${{ env.EXPO_TOKEN }}
 
       - name: Link Expo project
         if: ${{ env.EXPO_TOKEN != '' }}

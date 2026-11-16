@@ -6,6 +6,10 @@
     "orientation": "portrait",
     "userInterfaceStyle": "dark",
     "newArchEnabled": true,
+    "web": {
+      "bundler": "metro",
+      "output": "single"
+    },
     "android": {
       "package": "com.igurpeetsingh.hindibible",
       "versionCode": 3,
