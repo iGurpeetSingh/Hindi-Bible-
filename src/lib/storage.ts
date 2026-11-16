@@ -6,11 +6,12 @@ const KEYS = {
   bookmarks: "hb_bookmarks",
   history: "hb_history",
   notes: "hb_notes",
+  highlights: "hb_highlights",
   fontSize: "hb_font_size",
   readingPlan: "hb_reading_plan"
 };
 
-export type SavedReference = { id: string; reference: string; bookId: string; chapter: number; createdAt: number };
+export type SavedReference = { id: string; reference: string; bookId: string; chapter: number; verse?: number; createdAt: number };
 
 export type ReadingPlanProgress = { planId: string; startDate: string; completedChapters: string[]; updatedAt: number };
 
@@ -30,6 +31,8 @@ export const storage = {
   setHistory: (value: SavedReference[]) => AsyncStorage.setItem(KEYS.history, JSON.stringify(value)),
   getNotes: () => readJSON<Record<string,string>>(KEYS.notes, {}),
   setNotes: (value: Record<string,string>) => AsyncStorage.setItem(KEYS.notes, JSON.stringify(value)),
+  getHighlights: () => readJSON<Record<string,string>>(KEYS.highlights, {}),
+  setHighlights: (value: Record<string,string>) => AsyncStorage.setItem(KEYS.highlights, JSON.stringify(value)),
   getFontSize: async () => Number(await AsyncStorage.getItem(KEYS.fontSize)) || 19,
   setFontSize: (value: number) => AsyncStorage.setItem(KEYS.fontSize, String(value)),
   getReadingPlan: () => readJSON<ReadingPlanProgress | null>(KEYS.readingPlan, null),
