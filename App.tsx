@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import Svg, { Circle, Line, Path, Rect, Defs, LinearGradient, Stop } from "react-native-svg";
 import {
   ActivityIndicator, Alert, Modal, Platform, Pressable, SafeAreaView, Share,
@@ -6,6 +6,8 @@ import {
 } from "react-native";
 import * as Speech from "expo-speech";
 import * as Clipboard from "expo-clipboard";
+import * as Sharing from "expo-sharing";
+import { captureRef } from "react-native-view-shot";
 import { useAudioPlayer, useAudioPlayerStatus, setAudioModeAsync } from "expo-audio";
 import { Directory, File, Paths } from "expo-file-system";
 import { getChapterAudio, ChapterAudio } from "./src/lib/audioApi";
@@ -73,6 +75,8 @@ export default function App() {
   const [history,setHistory]=useState<SavedReference[]>([]);
   const [selectedVerse,setSelectedVerse]=useState<number|null>(null);
   const [verseMenuVisible,setVerseMenuVisible]=useState(false);
+  const [imageShareVisible,setImageShareVisible]=useState(false);
+  const verseCardRef=useRef<View>(null);
   const [noteModalVisible,setNoteModalVisible]=useState(false);
   const [noteDraft,setNoteDraft]=useState("");
   const [verseNotes,setVerseNotes]=useState<Record<string,string>>({});
@@ -288,6 +292,28 @@ export default function App() {
     const index=verseList.findIndex(item=>item.number===selectedVerse);
     setVerseMenuVisible(false);
     if(index>=0) await speakFrom(index);
+  }
+
+  function openVerseImageShare() {
+    setVerseMenuVisible(false);
+    setImageShareVisible(true);
+  }
+
+  async function shareVerseImage() {
+    if(!activeVerse||!activeVerseReference)return;
+    if(Platform.OS==="web") {
+      await shareSelectedVerse();
+      setImageShareVisible(false);
+      return;
+    }
+    try {
+      if(!verseCardRef.current) throw new Error("Verse card अभी तैयार नहीं है।");
+      const uri=await captureRef(verseCardRef,{format:"png",quality:1,result:"tmpfile"});
+      await Sharing.shareAsync(uri,{mimeType:"image/png",dialogTitle:activeVerseReference});
+      setImageShareVisible(false);
+    } catch(e) {
+      Alert.alert("Image Share उपलब्ध नहीं",e instanceof Error?e.message:"वचन की Image तैयार नहीं हो सकी।");
+    }
   }
 
   async function speakFrom(index:number) {
@@ -828,6 +854,7 @@ export default function App() {
             <Pressable style={[s.actionTile,{backgroundColor:"#E84B45"}]} onPress={copySelectedVerse}><Text style={s.actionTileIcon}>▢</Text><Text style={s.actionTileText}>Copy</Text></Pressable>
             <Pressable style={[s.actionTile,{backgroundColor:"#087DF0"}]} onPress={shareSelectedVerse}><Text style={s.actionTileIcon}>↗</Text><Text style={s.actionTileText}>Share Text</Text></Pressable>
             <Pressable style={[s.actionTile,{backgroundColor:"#743A2D"}]} onPress={toggleVerseBookmark}><Text style={s.actionTileIcon}>▮</Text><Text style={s.actionTileText}>Bookmark</Text></Pressable>
+            <Pressable style={[s.actionTile,{backgroundColor:"#7951C7"}]} onPress={openVerseImageShare}><Text style={s.actionTileIcon}>▧</Text><Text style={s.actionTileText}>Image Share</Text></Pressable>
             <Pressable style={[s.actionTile,{backgroundColor:"#E74799"}]} onPress={openVerseNote}><Text style={s.actionTileIcon}>✎</Text><Text style={s.actionTileText}>Notes</Text></Pressable>
             <View style={[s.actionTile,{backgroundColor:"#168DE0",paddingBottom:7}]}>
               <Text style={s.actionTileIcon}>▤</Text><Text style={s.actionTileText}>Highlight</Text>
@@ -841,6 +868,24 @@ export default function App() {
           <Text style={s.actionFootnote}>वचन पर टैप या Long Press करें। Desktop पर Right Click भी काम करता है।</Text>
         </Pressable>
       </Pressable>
+    </Modal>
+
+    <Modal visible={imageShareVisible} transparent animationType="fade" onRequestClose={()=>setImageShareVisible(false)}>
+      <View style={s.imageShareBackdrop}>
+        <View style={s.imageSharePanel}>
+          <View style={s.actionSheetHeader}>
+            <View style={{flex:1}}><Text style={s.actionSheetTitle}>वचन की Image Share करें</Text><Text style={s.actionSheetSubtitle}>{activeVerseReference}</Text></View>
+            <Pressable onPress={()=>setImageShareVisible(false)} hitSlop={12}><Text style={s.closeText}>✕</Text></Pressable>
+          </View>
+          <View ref={verseCardRef} collapsable={false} style={s.shareVerseCard}>
+            <Text style={s.shareVerseBrand}>✝  HINDI BIBLE</Text>
+            <Text style={s.shareVerseText}>{activeVerse?.text||""}</Text>
+            <Text style={s.shareVerseReference}>{activeVerseReference}</Text>
+            <Text style={s.shareVerseFooter}>परमेश्वर का वचन</Text>
+          </View>
+          <Pressable style={s.imageShareButton} onPress={shareVerseImage}><Text style={s.imageShareButtonText}>Image Share करें</Text></Pressable>
+        </View>
+      </View>
     </Modal>
 
     <Modal visible={noteModalVisible} transparent animationType="slide" onRequestClose={()=>setNoteModalVisible(false)}>
@@ -958,6 +1003,15 @@ planConfirmText:{fontSize:12,color:"#8A3E27",marginTop:12,lineHeight:18},
   highlightSwatches:{flexDirection:"row",gap:5,marginTop:6},
   highlightSwatch:{width:14,height:14,borderRadius:7,borderWidth:1,borderColor:"rgba(255,255,255,.85)"},
   actionFootnote:{fontSize:10,color:"#64748B",textAlign:"center",marginTop:14},
+  imageShareBackdrop:{flex:1,backgroundColor:"rgba(9,20,32,0.55)",justifyContent:"center",padding:18},
+  imageSharePanel:{width:"100%",maxWidth:420,alignSelf:"center",backgroundColor:"#FFFFFF",borderRadius:20,padding:18},
+  shareVerseCard:{backgroundColor:"#F3F8F4",borderRadius:16,borderWidth:1,borderColor:"#C9DED0",padding:24,minHeight:210,justifyContent:"center"},
+  shareVerseBrand:{fontSize:11,fontWeight:"900",letterSpacing:1.5,color:"#087A5C",textAlign:"center",marginBottom:22},
+  shareVerseText:{fontSize:22,lineHeight:34,fontWeight:"700",color:"#17382B",textAlign:"center"},
+  shareVerseReference:{fontSize:15,fontWeight:"900",color:"#087A5C",textAlign:"center",marginTop:18},
+  shareVerseFooter:{fontSize:10,color:"#718477",textAlign:"center",marginTop:22},
+  imageShareButton:{backgroundColor:"#087A5C",borderRadius:12,padding:14,alignItems:"center",marginTop:14},
+  imageShareButtonText:{color:"#FFFFFF",fontWeight:"900",fontSize:14},
   noteEditor:{width:"100%",maxWidth:480,alignSelf:"center",backgroundColor:"#FFFFFF",borderTopLeftRadius:22,borderTopRightRadius:22,padding:18,paddingBottom:28},
   noteEditorInput:{minHeight:130,maxHeight:240,borderWidth:1,borderColor:"#CBD5E1",borderRadius:12,padding:12,color:"#172B3A",textAlignVertical:"top",fontSize:15,marginTop:10},
   noteEditorButtons:{flexDirection:"row",justifyContent:"flex-end",gap:10,marginTop:14},
