@@ -21,7 +21,7 @@ async function fetchJson<T>(url: string): Promise<T> {
 }
 
 function absoluteApiUrl(path: string): string {
-  return path.startsWith("http") ? path : `${BASE}${path.startsWith("/") ? "" : "/"}${path}`;
+  if (path.startsWith("http")) return path;\n  if (path.startsWith("/api/")) return `https://bible.helloao.org${path}`;\n  return `${BASE}/${path.replace(/^\\//, "")}`;
 }
 
 /**

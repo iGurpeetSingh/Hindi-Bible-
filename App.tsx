@@ -68,7 +68,7 @@ export default function App() {
   const [audioAutoNext,setAudioAutoNext]=useState(true);
   const [audioDownloaded,setAudioDownloaded]=useState(false);
   const [audioLocalUri,setAudioLocalUri]=useState("");
-  const [audioVerse,setAudioVerse]=useState(-1);
+  const [audioVerse,setAudioVerse]=useState(-1);\n  const [audioTrackWidth,setAudioTrackWidth]=useState(1);
 
   useEffect(()=>{
     (async()=>{
@@ -154,7 +154,7 @@ export default function App() {
   const syncedVerse=selectedAudio?.timings?.length ? selectedAudio.timings.reduce((active,start,index)=>start<=audioStatus.currentTime?index:active,-1) : -1;
 
   async function openAudioChapter(nextBook:BibleBook,nextChapter:number,autoPlay=false,readerOverride?:string) {
-    setBook(nextBook);setChapter(nextChapter);setTab("audio");setDrawer(false);setPicker(false);
+    setBook(nextBook);setChapter(nextChapter);setTab("audio");setDrawer(false);setPicker(false);Speech.stop().catch(()=>{});setSpeaking(false);
     setAudioLoading(true);setAudioError("");setAudioItems([]);setAudioReader("");setAudioLocalUri("");setAudioDownloaded(false);setAudioVerse(-1);
     audioPlayer.pause();
     try {
@@ -315,7 +315,7 @@ export default function App() {
             <Text style={s.audioLabel}>आवाज़ / Reader</Text>
             <View style={s.readerChoices}>{audioItems.map(item=><Pressable key={item.readerId} onPress={()=>changeAudioReader(item.readerId)} style={[s.readerChoice,item.readerId===audioReader&&s.readerChoiceActive]}><Text style={[s.readerChoiceText,item.readerId===audioReader&&{color:C.white}]}>{item.readerId}</Text></Pressable>)}</View>
             <View style={s.audioProgressRow}><Text style={s.muted}>{formatTime(audioStatus.currentTime)}</Text><Text style={s.muted}>{formatTime(audioStatus.duration)}</Text></View>
-            <View style={s.audioProgress}><View style={[s.audioProgressFill,{width:`${audioStatus.duration?Math.min(100,audioStatus.currentTime/audioStatus.duration*100):0}%`}]} /></View>
+            <Pressable onLayout={event=>setAudioTrackWidth(Math.max(1,event.nativeEvent.layout.width))} onPress={event=>seekAudio((event.nativeEvent.locationX/audioTrackWidth)*audioStatus.duration)} style={s.audioProgress}><View style={[s.audioProgressFill,{width:`${audioStatus.duration?Math.min(100,audioStatus.currentTime/audioStatus.duration*100):0}%`}]} /></Pressable>
             <View style={s.audioControls}>
               <Pressable onPress={()=>seekAudio(audioStatus.currentTime-15)} style={s.audioControl}><Text style={s.audioControlText}>−15</Text></Pressable>
               <Pressable onPress={()=>skipAudioChapter(-1)} style={s.audioControl}><Text style={s.audioControlText}>|◀</Text></Pressable>
