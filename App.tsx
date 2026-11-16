@@ -169,13 +169,14 @@ export default function App() {
       const chosen=audioData.find(item=>item.readerId===readerOverride)||audioData[0];
       setAudioReader(chosen.readerId);
       const fileName=`${bibleId}-${nextBook.id}-${nextChapter}-${chosen.readerId}.mp3`.replace(/[^a-zA-Z0-9._-]/g,"_");
+      let existingLocalUri="";
       if(Platform.OS!=="web"){
         const directory=new Directory(Paths.document,"HindiBibleAudio");
         if(!directory.exists) directory.create({intermediates:true,idempotent:true});
         const localFile=new File(directory,fileName);
-        if(localFile.exists){setAudioLocalUri(localFile.uri);setAudioDownloaded(true);}
+        if(localFile.exists){existingLocalUri=localFile.uri;setAudioLocalUri(localFile.uri);setAudioDownloaded(true);}
       }
-      audioPlayer.replace(Platform.OS!=="web" && audioDownloaded && audioLocalUri ? audioLocalUri : chosen.audioUrl);
+      audioPlayer.replace(existingLocalUri || chosen.audioUrl);
       if(autoPlay) {
         audioPlayer.setActiveForLockScreen(true,{title:`${nextBook.hindi} अध्याय ${nextChapter}`,artist:"Hindi Bible",albumTitle:"Audio Bible"},{showNextTrack:true,showPreviousTrack:true,showSeekForward:true,showSeekBackward:true});
         audioPlayer.play();
@@ -207,8 +208,19 @@ export default function App() {
   async function downloadAudio() {
     if(!selectedAudio)return;
     if(Platform.OS==="web") {
-      try { await Linking.openURL(selectedAudio.audioUrl); }
-      catch { setAudioError("Browser में Audio Download Link नहीं खुल पाया।"); }
+      try {
+        const response=await fetch(selectedAudio.audioUrl);
+        if(!response.ok) throw new Error("Audio file download failed");
+        const blob=await response.blob();
+        const objectUrl=URL.createObjectURL(blob);
+        const anchor=document.createElement("a");
+        anchor.href=objectUrl;
+        anchor.download=`${book.id}-${chapter}-${selectedAudio.readerId}.mp3`;
+        document.body.appendChild(anchor);anchor.click();anchor.remove();
+        URL.revokeObjectURL(objectUrl);
+      } catch {
+        setAudioError("इस Audio Server ने Browser Download की अनुमति नहीं दी। Audio को नए टैब में खोलने के लिए नीचे दिए लिंक का उपयोग करें।");
+      }
       return;
     }
     try {
@@ -314,7 +326,7 @@ export default function App() {
             <View style={s.inlineActions}>
               <Button label={`गति ${audioRate}x`} outline onPress={()=>{const rates=[0.75,1,1.25,1.5,2];const next=rates[(rates.indexOf(audioRate)+1)%rates.length];setAudioRate(next);audioPlayer.setPlaybackRate(next);}}/>
               <Button label={audioAutoNext?"Auto Next: ON":"Auto Next: OFF"} outline onPress={()=>setAudioAutoNext(v=>!v)}/>
-              <Button label={audioDownloaded?"Offline Saved":"Download"} outline onPress={downloadAudio}/>
+              <Button label={audioDownloaded?"Offline Saved":Platform.OS==="web"?"Download MP3":"Download Offline"} outline onPress={downloadAudio}/>
             </View>
             {selectedAudio.timings?.length
               ? <Text style={s.audioHint}>वचन के साथ Audio Sync उपलब्ध है। किसी वचन को चुनने पर Audio उसी समय से चलेगा।</Text>
@@ -349,7 +361,7 @@ export default function App() {
 
       {tab==="settings"&&<>
         <Text style={s.pageHeading}>सेटिंग्स</Text><Text style={s.muted}>हिंदी अनुवाद अपने आप चुना जाता है। यहाँ आवाज़ और पढ़ने का आकार बदलें।</Text>
-        <View style={s.settingsCard}><Text style={s.sectionTitle}>आवाज़ और पढ़ना</Text><Text style={s.muted}>वचन सुनाने के लिए Android की Hindi Text-to-Speech आवाज़ का उपयोग होगा। यदि आवाज़ न आए तो फोन की Text-to-Speech सेटिंग में Hindi voice डाउनलोड करें।</Text><View style={s.inlineActions}><Button label="आवाज़ जाँचें" onPress={()=>Speech.speak("आदि में परमेश्वर ने आकाश और पृथ्वी की सृष्टि की।",{language:"hi-IN",rate:.88})}/><Button label="आवाज़ रोकें" outline onPress={stopSpeech}/></View><Text style={s.muted}>अक्षर आकार: {fontSize}</Text><View style={s.inlineActions}><Button label="A−" outline onPress={()=>{const n=Math.max(16,fontSize-1);setFontSize(n);storage.setFontSize(n);}}/><Button label="A+" outline onPress={()=>{const n=Math.min(32,fontSize+1);setFontSize(n);storage.setFontSize(n);}}/></View></View>
+        <View style={s.settingsCard}><Text style={s.sectionTitle}>आवाज़ और पढ़ना</Text><Text style={s.muted}>वचन सुनने के लिए Recorded Audio Bible उपलब्ध होने पर Audio Player इस्तेमाल करें। किसी अध्याय की Recording न मिले तो वचन सुनाने के लिए फोन की Hindi Text-to-Speech आवाज़ उपलब्ध है।</Text><View style={s.inlineActions}><Button label="आवाज़ जाँचें" onPress={()=>Speech.speak("आदि में परमेश्वर ने आकाश और पृथ्वी की सृष्टि की।",{language:"hi-IN",rate:.88})}/><Button label="आवाज़ रोकें" outline onPress={stopSpeech}/></View><Text style={s.muted}>अक्षर आकार: {fontSize}</Text><View style={s.inlineActions}><Button label="A−" outline onPress={()=>{const n=Math.max(16,fontSize-1);setFontSize(n);storage.setFontSize(n);}}/><Button label="A+" outline onPress={()=>{const n=Math.min(32,fontSize+1);setFontSize(n);storage.setFontSize(n);}}/></View></View>
         {loading&&<ActivityIndicator color={C.blue} style={{margin:16}}/>}
       </>}
     </ScrollView>
