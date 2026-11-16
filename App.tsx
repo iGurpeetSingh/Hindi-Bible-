@@ -68,7 +68,8 @@ export default function App() {
   const [audioAutoNext,setAudioAutoNext]=useState(true);
   const [audioDownloaded,setAudioDownloaded]=useState(false);
   const [audioLocalUri,setAudioLocalUri]=useState("");
-  const [audioVerse,setAudioVerse]=useState(-1);\n  const [audioTrackWidth,setAudioTrackWidth]=useState(1);
+  const [audioVerse,setAudioVerse]=useState(-1);
+  const [audioTrackWidth,setAudioTrackWidth]=useState(1);
 
   useEffect(()=>{
     (async()=>{
