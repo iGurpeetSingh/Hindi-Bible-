@@ -26,14 +26,17 @@ The app's Settings screen discovers Hindi translations from the live provider li
 - Live Hindi translation discovery and selection.
 - Exact scripture-reference lookup (examples: `John 3:16`, `JHN.3.16`, `यूहन्ना 3:16`).
 - Daily verse (John 3:16) loaded from the selected translation.
-- Local bookmarks, reading history, personal notes and font-size preference.
+- Local chapter and verse bookmarks, reading history, verse-specific personal notes, and font-size preference.
+- Verse context menu: tap to select, long-press on mobile, or right-click on web.
+- Verse actions: Copy, Share Text, Image Share card, Bookmark, Notes, color Highlight, Bookmark Chapter, and Hindi text-to-speech playback.
+- Highlights and notes persist locally on the device; highlight colors can be changed or cleared.
 - Responsive dark navy / parchment reader UI.
 - EAS internal APK build profile.
 
 ## Known MVP limitations
 
 - Full-text keyword search across all verses is not provided by the selected static API; current Search supports exact Bible references. A local full-text index is a planned follow-up.
-- Audio playback, offline scripture downloads, verse-level highlights, user accounts/cloud sync, and production backend are planned next phases.
+- Offline scripture downloads, user accounts/cloud sync, and production backend are planned next phases. Recorded chapter audio depends on provider availability; verse playback uses the device Hindi text-to-speech engine.
 - Scripture text requires an internet connection in this MVP.
 - Translation list results depend on what the provider currently publishes.
 
