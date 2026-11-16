@@ -16,8 +16,19 @@
       "adaptiveIcon": {
         "foregroundImage": "./assets/hindi-bible-icon.png",
         "backgroundColor": "#FFFFFF"
-      }
+      },
+      "permissions": [
+        "FOREGROUND_SERVICE",
+        "FOREGROUND_SERVICE_MEDIA_PLAYBACK"
+      ]
     },
-    "icon": "./assets/hindi-bible-icon.png"
+    "icon": "./assets/hindi-bible-icon.png",
+    "ios": {
+      "infoPlist": {
+        "UIBackgroundModes": [
+          "audio"
+        ]
+      }
+    }
   }
 }
