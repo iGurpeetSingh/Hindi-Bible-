@@ -30,6 +30,97 @@ export type ApiIndexBook = {
 
 export type SearchVerse = { reference: string; passage_id?: string };
 
+export type BibleSearchVerse = {
+  reference: string;
+  bookId: string;
+  bookName: string;
+  chapter: number;
+  verse: number;
+  text: string;
+};
+
+type CompleteSimpleResponse = {
+  books?: {
+    id: string;
+    name?: string;
+    commonName?: string;
+    chapters?: {
+      chapter?: {
+        number?: number;
+        content?: { type: string; number?: number; text?: string }[];
+      };
+    }[];
+  }[];
+};
+
+const completeSearchCache = new Map<string, Promise<BibleSearchVerse[]>>();
+
+function normalizeSearchText(value: string): string {
+  return value
+    .normalize("NFC")
+    .toLocaleLowerCase()
+    .replace(/[\\u200B-\\u200D\\uFEFF]/g, "")
+    .replace(/[’‘]/g, "'")
+    .replace(/\\s+/g, " ")
+    .trim();
+}
+
+/**
+ * AO Lab does not publish a dedicated full-text search endpoint.
+ * Its complete.simple.json download contains every book/chapter/verse,
+ * so download it once per translation per app session and search locally.
+ */
+export async function searchBibleText(
+  translationId: string,
+  query: string,
+  limit = 100
+): Promise<BibleSearchVerse[]> {
+  const normalizedQuery = normalizeSearchText(query);
+  if (!normalizedQuery) return [];
+
+  let indexPromise = completeSearchCache.get(translationId);
+  if (!indexPromise) {
+    indexPromise = request<CompleteSimpleResponse>(`/${encodeURIComponent(translationId)}/complete.simple.json`)
+      .then(data => {
+        const verses: BibleSearchVerse[] = [];
+        for (const book of data.books || []) {
+          for (const chapterEntry of book.chapters || []) {
+            const chapter = chapterEntry.chapter;
+            const chapterNumber = Number(chapter?.number);
+            if (!Number.isInteger(chapterNumber) || chapterNumber < 1) continue;
+            for (const item of chapter?.content || []) {
+              if (item.type !== "verse" || typeof item.number !== "number" || !item.text) continue;
+              verses.push({
+                reference: `${book.id}.${chapterNumber}.${item.number}`,
+                bookId: book.id,
+                bookName: book.commonName || book.name || book.id,
+                chapter: chapterNumber,
+                verse: item.number,
+                text: item.text
+              });
+            }
+          }
+        }
+        if (!verses.length) throw new Error("इस अनुवाद का पूरा Bible Text Search के लिए उपलब्ध नहीं है।");
+        return verses;
+      })
+      .catch(error => {
+        completeSearchCache.delete(translationId);
+        throw error;
+      });
+    completeSearchCache.set(translationId, indexPromise);
+  }
+
+  const allVerses = await indexPromise;
+  const terms = normalizedQuery.split(" ").filter(Boolean);
+  return allVerses
+    .filter(verse => {
+      const text = normalizeSearchText(verse.text);
+      return text.includes(normalizedQuery) || (terms.length > 1 && terms.every(term => text.includes(term)));
+    })
+    .slice(0, Math.max(1, limit));
+}
+
 type TranslationResponse = { translations: (ApiBible & { languageEnglishName?: string })[] };
 type BooksResponse = { books: { id: string; name: string; commonName?: string; numberOfChapters: number }[] };
 type ChapterResponse = {
