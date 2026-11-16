@@ -39,7 +39,8 @@ export default function App() {
   const [tab,setTab]=useState<Tab>("home");
   const [bibleId,setBibleId]=useState("");
   const [versions,setVersions]=useState<ApiBible[]>([]);
-  const [translationLoading,setTranslationLoading]=useState(true);\n  const [audioAvailability,setAudioAvailability]=useState<"idle"|"checking"|"available"|"unavailable"|"error">("idle");
+  const [translationLoading,setTranslationLoading]=useState(true);
+  const [audioAvailability,setAudioAvailability]=useState<"idle"|"checking"|"available"|"unavailable"|"error">("idle");
   const [audioAvailabilityMessage,setAudioAvailabilityMessage]=useState("");
   const [catalog,setCatalog]=useState<ApiIndexBook[]>([]);
   const [book,setBook]=useState<BibleBook>(BOOKS[0]);
