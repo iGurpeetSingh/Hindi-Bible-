@@ -10,9 +10,10 @@ import { Directory, File, Paths } from "expo-file-system";
 import { getChapterAudio, ChapterAudio } from "./src/lib/audioApi";
 import { BOOKS, BibleBook } from "./src/data/books";
 import { ApiBible, ApiIndexBook, getBibleIndex, getHindiBibles, getPassage, searchVerses, searchBibleText } from "./src/lib/bibleApi";
-import { SavedReference, storage } from "./src/lib/storage";
+import { ReadingPlanProgress, SavedReference, storage } from "./src/lib/storage";
+import { buildReadingPlanSchedule, getLocalDateKey, getPlanDayNumber, getReadingPlanTemplate, READING_PLAN_TEMPLATES, ReadingPlanChapter, shiftDateKey } from "./src/data/readingPlans";
 
-type Tab = "home" | "bible" | "audio" | "search" | "saved" | "settings";
+type Tab = "home" | "bible" | "audio" | "search" | "saved" | "settings" | "plan";
 type Passage = { id:string; content:string; reference:string; copyright?:string };
 type PickerTab = "BOOK" | "CHAPTER" | "VERSE";
 const C = { bg:"#F0F7F2", blue:"#087A5C", blueDark:"#065B46", pale:"#E1F1E7", ink:"#18372E", muted:"#61776C", line:"#CEE0D5", white:"#FAFDFA", gold:"#D6A64D", green:"#0E6256", red:"#A33D42" };
@@ -88,11 +89,16 @@ export default function App() {
   const [audioLocalUri,setAudioLocalUri]=useState("");
   const [audioVerse,setAudioVerse]=useState(-1);
   const [audioTrackWidth,setAudioTrackWidth]=useState(1);
+  const [planProgress,setPlanProgress]=useState<ReadingPlanProgress|null>(null);
+  const [planSelectedId,setPlanSelectedId]=useState("bible-year");
+  const [planViewedDay,setPlanViewedDay]=useState(0);
+  const [planConfirmStop,setPlanConfirmStop]=useState(false);
+  const [planMessage,setPlanMessage]=useState("");
 
   useEffect(()=>{
     (async()=>{
-      const [id,bm,hist,fz]=await Promise.all([storage.getBibleId(),storage.getBookmarks(),storage.getHistory(),storage.getFontSize()]);
-      setBookmarks(bm);setHistory(hist);setFontSize(18); if(fz!==18) await storage.setFontSize(18);
+      const [id,bm,hist,fz,savedPlan]=await Promise.all([storage.getBibleId(),storage.getBookmarks(),storage.getHistory(),storage.getFontSize(),storage.getReadingPlan()]);
+      setBookmarks(bm);setHistory(hist);setPlanProgress(savedPlan);setFontSize(18); if(fz!==18) await storage.setFontSize(18);
       try {
         const available=await getHindiBibles();
         setVersions(available);
@@ -125,6 +131,17 @@ export default function App() {
   const chapterCount=useMemo(()=>catalog.find(x=>x.id===book.id)?.chapters.length||book.chapters,[catalog,book]);
   const verseList=useMemo(()=>passage?verseItems(passage.content):[],[passage]);
   const filteredBooks=useMemo(()=>BOOKS.filter(b=>(testament==="all"||b.testament===testament)&&(b.hindi.toLowerCase().includes(filter.toLowerCase())||b.english.toLowerCase().includes(filter.toLowerCase()))),[filter,testament]);
+  const activePlanTemplate=useMemo(()=>planProgress?getReadingPlanTemplate(planProgress.planId):undefined,[planProgress?.planId]);
+  const activePlanSchedule=useMemo(()=>activePlanTemplate?buildReadingPlanSchedule(activePlanTemplate.id):[],[activePlanTemplate?.id]);
+  const planTodayIndex=activePlanTemplate&&planProgress?getPlanDayNumber(planProgress.startDate,getLocalDateKey(),activePlanTemplate.durationDays):1;
+  const planDisplayDay=Math.min(Math.max(planViewedDay||planTodayIndex,1),activePlanTemplate?.durationDays||1);
+  const displayedPlanDay=activePlanSchedule[planDisplayDay-1]||null;
+  const planCompletedSet=useMemo(()=>new Set<string>(planProgress?.completedChapters||[]),[planProgress]);
+  const planTotalChapters=activePlanSchedule.reduce((sum,day)=>sum+day.chapters.length,0);
+  const planCompletedCount=activePlanSchedule.reduce((sum,day)=>sum+day.chapters.filter(item=>planCompletedSet.has(item.id)).length,0);
+  const planProgressPercent=planTotalChapters?Math.round(planCompletedCount/planTotalChapters*100):0;
+  const displayedDayComplete=!!displayedPlanDay&&displayedPlanDay.chapters.length>0&&displayedPlanDay.chapters.every(item=>planCompletedSet.has(item.id));
+  const selectedPlanTemplate=READING_PLAN_TEMPLATES.find(item=>item.id===planSelectedId)||READING_PLAN_TEMPLATES[0];
 
   async function openChapter(nextBook:BibleBook,nextChapter:number) {
     setBook(nextBook);setChapter(nextChapter);setTab("bible");setDrawer(false);setPicker(false);setPassage(null);setError("");
@@ -139,6 +156,53 @@ export default function App() {
       setHistory(updated);await storage.setHistory(updated);
     } catch(e){setError(e instanceof Error?e.message:"अध्याय लोड नहीं हुआ।");}
     finally{setLoading(false);}
+  }
+
+  async function startReadingPlan(planId:string) {
+    const template=getReadingPlanTemplate(planId);
+    if(!template){setPlanMessage("यह Reading Plan उपलब्ध नहीं है।");return;}
+    const next:ReadingPlanProgress={planId:template.id,startDate:getLocalDateKey(),completedChapters:[],updatedAt:Date.now()};
+    await storage.setReadingPlan(next);
+    setPlanProgress(next);setPlanViewedDay(1);setPlanConfirmStop(false);setPlanMessage("");
+  }
+
+  async function updatePlanChapters(chapterIds:string[],complete:boolean) {
+    if(!planProgress)return;
+    const completed=new Set(planProgress.completedChapters);
+    chapterIds.forEach(id=>complete?completed.add(id):completed.delete(id));
+    const next:ReadingPlanProgress={...planProgress,completedChapters:[...completed],updatedAt:Date.now()};
+    setPlanProgress(next);
+    await storage.setReadingPlan(next);
+  }
+
+  async function togglePlanChapter(chapterId:string) {
+    await updatePlanChapters([chapterId],!planCompletedSet.has(chapterId));
+  }
+
+  async function completeDisplayedPlanDay() {
+    if(!displayedPlanDay)return;
+    await updatePlanChapters(displayedPlanDay.chapters.map(item=>item.id),true);
+    setPlanMessage(`दिन ${displayedPlanDay.day} की सभी पढ़ाइयाँ पूरी चिह्नित कर दी गई हैं।`);
+  }
+
+  async function catchUpReadingPlan() {
+    if(!planProgress||!activePlanSchedule.length)return;
+    const firstIncomplete=activePlanSchedule.findIndex(day=>day.chapters.some(item=>!planCompletedSet.has(item.id)));
+    if(firstIncomplete<0){setPlanMessage("यह योजना पहले ही पूरी हो चुकी है।");return;}
+    const next:ReadingPlanProgress={...planProgress,startDate:shiftDateKey(getLocalDateKey(),-firstIncomplete),updatedAt:Date.now()};
+    setPlanProgress(next);await storage.setReadingPlan(next);setPlanViewedDay(firstIncomplete+1);
+    setPlanMessage(`आपकी अगली अधूरी पढ़ाई दिन ${firstIncomplete+1} पर सेट की गई है।`);
+  }
+
+  async function stopReadingPlan() {
+    await storage.clearReadingPlan();
+    setPlanProgress(null);setPlanViewedDay(0);setPlanConfirmStop(false);
+    setPlanMessage("योजना बंद कर दी गई है। आपकी Bookmarks और Reading History सुरक्षित हैं।");
+  }
+
+  function openPlanChapter(item:ReadingPlanChapter) {
+    const target=BOOKS.find(entry=>entry.id===item.bookId);
+    if(target)openChapter(target,item.chapter);
   }
 
   async function selectBook(b:BibleBook) {
@@ -381,7 +445,7 @@ export default function App() {
               {icon:"audio",label:"ऑडियो बाइबल",description:"वचन को सुनें",action:"audio",accent:"#20E5A4",halo:"#073F35"},
               {icon:"search",label:"वचन खोजें",description:"किसी भी वचन को खोजें",action:"search",accent:"#42D8F5",halo:"#102F4D"},
               {icon:"bookmark",label:"बुकमार्क",description:"पसंदीदा वचन सहेजें",action:"saved",accent:"#F4C95D",halo:"#4A3A13"},
-              {icon:"plan",label:"पढ़ने की योजना",description:"नियमित बाइबल अध्ययन",action:"soon",accent:"#C68BFF",halo:"#392052"},
+              {icon:"plan",label:"पढ़ने की योजना",description:"अपनी दैनिक पढ़ाई पूरी करें",action:"plan",accent:"#C68BFF",halo:"#392052"},
               {icon:"notes",label:"नोट्स",description:"अपने विचार लिखें",action:"soon",accent:"#F5B64D",halo:"#4A3216"},
               {icon:"study",label:"बाइबल अध्ययन",description:"गहराई से समझें",action:"soon",accent:"#41D8F3",halo:"#123B50"}
             ].map(item=>{
@@ -399,6 +463,7 @@ export default function App() {
               if(item.action==="audio") return <Pressable key={item.label} style={[s.featureCard,{borderColor:"#20E5A4",backgroundColor:"#043B33"}]} onPress={()=>openAudioChapter(book,chapter)} accessibilityRole="button">{cardContent}</Pressable>;
               if(item.action==="search") return <Pressable key={item.label} style={[s.featureCard,{borderColor:"#42D8F5",backgroundColor:"#043B33"}]} onPress={()=>changeTab("search")} accessibilityRole="button">{cardContent}</Pressable>;
               if(item.action==="saved") return <Pressable key={item.label} style={[s.featureCard,{borderColor:"#F4C95D",backgroundColor:"#043B33"}]} onPress={()=>changeTab("saved")} accessibilityRole="button">{cardContent}</Pressable>;
+              if(item.action==="plan") return <Pressable key={item.label} style={[s.featureCard,{borderColor:item.accent,backgroundColor:"#043B33"}]} onPress={()=>changeTab("plan")} accessibilityRole="button">{cardContent}</Pressable>;
               return <View key={item.label} style={[s.featureCard,{borderColor:item.accent,backgroundColor:"#043B33"}]}>{cardContent}</View>;
             })}
           </View>
@@ -514,6 +579,104 @@ export default function App() {
         </Pressable>)}
       </>}
 
+      {tab==="plan"&&<>
+        <View style={s.innerHomeBar}>
+          <Pressable onPress={()=>changeTab("home")} style={s.innerHomeButton} accessibilityRole="button" accessibilityLabel="होम पेज पर वापस जाएँ">
+            <Text style={s.innerHomeIcon}>⌂</Text><Text style={s.innerHomeText}>होम पर जाएँ</Text>
+          </Pressable>
+          <Text style={s.innerPageTag}>DAILY BIBLE PLAN</Text>
+        </View>
+        <Text style={s.pageHeading}>पढ़ने की योजना</Text>
+        <Text style={s.muted}>रोज़ की बाइबल पढ़ाई चुनें, अध्याय खोलें और अपनी प्रगति सेव करें। आपका Progress इसी डिवाइस में सुरक्षित रहेगा।</Text>
+
+        {!planProgress?<>
+          <View style={s.planIntroCard}>
+            <Text style={s.planIntroIcon}>📅</Text>
+            <Text style={s.planIntroTitle}>अपनी बाइबल पढ़ने की यात्रा शुरू करें</Text>
+            <Text style={s.planIntroText}>एक योजना चुनें। हर दिन तय अध्याय पढ़ें और पढ़ने के बाद उन्हें पूरा चिह्नित करें।</Text>
+          </View>
+          <Text style={s.sectionTitle}>उपलब्ध योजनाएँ</Text>
+          {READING_PLAN_TEMPLATES.map((item,index)=><Pressable key={item.id} onPress={()=>{setPlanSelectedId(item.id);setPlanMessage("");}} style={[s.planTemplateCard,planSelectedId===item.id&&s.planTemplateActive]}>
+            <View style={s.planTemplateIcon}><Text style={s.planTemplateIconText}>{["📖","✝","♫","✦"][index]}</Text></View>
+            <View style={{flex:1}}>
+              <Text style={s.planTemplateTitle}>{item.title}</Text>
+              <Text style={s.planTemplateSubtitle}>{item.subtitle}</Text>
+              <Text style={s.planTemplateDescription}>{item.description}</Text>
+            </View>
+            <Text style={s.planRadio}>{planSelectedId===item.id?"●":"○"}</Text>
+          </Pressable>)}
+          <View style={s.planDetailsCard}>
+            <Text style={s.planDetailsEyebrow}>SELECTED PLAN</Text>
+            <Text style={s.planDetailsTitle}>{selectedPlanTemplate.title}</Text>
+            <Text style={s.muted}>{selectedPlanTemplate.description}</Text>
+            <Button label="योजना शुरू करें" onPress={()=>startReadingPlan(selectedPlanTemplate.id)}/>
+          </View>
+        </>:!activePlanTemplate?<View style={s.emptyBox}><Text style={s.emptyTitle}>योजना उपलब्ध नहीं</Text><Text style={s.muted}>सेव की गई योजना की जानकारी नहीं मिली। इसे बंद करके नई योजना चुनें।</Text><Button label="योजना हटाएँ" onPress={stopReadingPlan}/></View>:<>
+          <View style={s.planSummaryCard}>
+            <Text style={s.planSummaryEyebrow}>आपकी सक्रिय योजना</Text>
+            <Text style={s.planSummaryTitle}>{activePlanTemplate.title}</Text>
+            <Text style={s.planSummaryMeta}>शुरू: {planProgress.startDate}  •  दिन {planTodayIndex}/{activePlanTemplate.durationDays}</Text>
+            <View style={s.planProgressTrack}><View style={[s.planProgressFill,{width:`${planProgressPercent}%`}]}/></View>
+            <View style={s.planProgressNumbers}>
+              <Text style={s.planProgressText}>{planCompletedCount} / {planTotalChapters} अध्याय पूरे</Text>
+              <Text style={s.planProgressPercent}>{planProgressPercent}%</Text>
+            </View>
+            {planProgressPercent===100&&<Text style={s.planFinishedText}>बधाई! आपने इस योजना के सभी अध्याय पूरे कर लिए हैं।</Text>}
+          </View>
+
+          <View style={s.planDayNavigator}>
+            <Pressable disabled={planDisplayDay<=1} onPress={()=>{setPlanViewedDay(planDisplayDay-1);setPlanMessage("");}} style={[s.planDayArrow,planDisplayDay<=1&&{opacity:.35}]}><Text style={s.planDayArrowText}>‹ पिछला</Text></Pressable>
+            <View style={{alignItems:"center",flex:1}}>
+              <Text style={s.planDayNumber}>दिन {planDisplayDay}</Text>
+              <Text style={s.planDayHint}>{planDisplayDay===planTodayIndex?"आज की पढ़ाई":planDisplayDay<planTodayIndex?"पिछली पढ़ाई":"आने वाली पढ़ाई"}</Text>
+            </View>
+            <Pressable disabled={planDisplayDay>=activePlanTemplate.durationDays} onPress={()=>{setPlanViewedDay(planDisplayDay+1);setPlanMessage("");}} style={[s.planDayArrow,planDisplayDay>=activePlanTemplate.durationDays&&{opacity:.35}]}><Text style={s.planDayArrowText}>अगला ›</Text></Pressable>
+          </View>
+
+          <View style={s.planDayCard}>
+            <View style={s.planDayCardHead}>
+              <View style={{flex:1}}>
+                <Text style={s.planDayCardTitle}>इस दिन के Bible Chapters</Text>
+                <Text style={s.muted}>{displayedPlanDay?.chapters.length||0} अध्याय • पूरा होने पर टिक करें</Text>
+              </View>
+              <Text style={[s.planDayStatus,displayedDayComplete&&s.planDayStatusDone]}>{displayedDayComplete?"पूरा हुआ":"बाकी है"}</Text>
+            </View>
+            {displayedPlanDay?.chapters.map(item=>{
+              const done=planCompletedSet.has(item.id);
+              return <View key={item.id} style={[s.planChapterRow,done&&s.planChapterRowDone]}>
+                <Pressable onPress={()=>openPlanChapter(item)} style={{flex:1,minWidth:0}} accessibilityRole="button">
+                  <Text style={s.planChapterTitle}>{item.bookHindi} {item.chapter}</Text>
+                  <Text style={s.planChapterSubtitle}>{item.bookEnglish} {item.chapter}  •  अध्याय खोलें</Text>
+                </Pressable>
+                <Pressable onPress={()=>togglePlanChapter(item.id)} style={[s.planChapterCheck,done&&s.planChapterCheckDone]} accessibilityRole="checkbox" accessibilityState={{checked:done}}>
+                  <Text style={[s.planChapterCheckText,done&&{color:"#FFFFFF"}]}>{done?"✓":"○"}</Text>
+                </Pressable>
+              </View>;
+            })}
+            <Button label={displayedDayComplete?"इस दिन की पढ़ाई पूरी है":"इस दिन की सभी पढ़ाइयाँ पूरी करें"} onPress={completeDisplayedPlanDay} disabled={displayedDayComplete||!displayedPlanDay?.chapters.length}/>
+          </View>
+
+          <View style={s.planActionRow}>
+            <View style={{flex:1}}><Button label="आज पर लौटें" outline onPress={()=>{setPlanViewedDay(planTodayIndex);setPlanMessage("");}}/></View>
+            <View style={{flex:1}}><Button label="अधूरी पढ़ाई पर जाएँ" outline onPress={catchUpReadingPlan}/></View>
+          </View>
+          <Text style={s.planFootnote}>अध्याय खोलकर पढ़ें, फिर इस सूची में ✓ दबाएँ। अध्याय खोलने से वह अपने आप पूरा नहीं माना जाता; आप स्वयं पूरी हुई पढ़ाई चिह्नित करते हैं।</Text>
+          {!!planMessage&&<Text style={s.planFeedback}>{planMessage}</Text>}
+          <View style={s.planManageCard}>
+            <Text style={s.planManageTitle}>योजना प्रबंधन</Text>
+            <Text style={s.muted}>योजना बंद करने पर उसका वर्तमान Progress हट जाएगा। आपकी Bookmarks और Reading History सुरक्षित रहेंगी।</Text>
+            {!planConfirmStop?<Button label="योजना समाप्त करें" outline onPress={()=>setPlanConfirmStop(true)}/>:<>
+              <Text style={s.planConfirmText}>क्या आप यह योजना बंद करना चाहते हैं? सेव की गई Progress हट जाएगी।</Text>
+              <View style={s.planActionRow}>
+                <View style={{flex:1}}><Button label="नहीं, वापस जाएँ" outline onPress={()=>setPlanConfirmStop(false)}/></View>
+                <View style={{flex:1}}><Button label="हाँ, समाप्त करें" onPress={stopReadingPlan}/></View>
+              </View>
+            </>}
+          </View>
+        </>}
+        {!!planMessage&&!planProgress&&<Text style={s.planFeedback}>{planMessage}</Text>}
+      </>}
+
       {tab==="saved"&&<>
         <View style={s.innerHomeBar}>
           <Pressable onPress={()=>changeTab("home")} style={s.innerHomeButton} accessibilityRole="button" accessibilityLabel="होम पेज पर वापस जाएँ">
@@ -614,4 +777,53 @@ featureLabel:{fontSize:13,fontWeight:"900",color:"#FFFFFF",marginTop:8,textAlign
 featureSub:{fontSize:10,color:"#D7EEE6",lineHeight:14,textAlign:"center",marginTop:4,zIndex:1},
 comingSoon:{fontSize:8,fontWeight:"900",letterSpacing:.8,color:"#A87316",marginTop:5},
 homeFooter:{fontSize:11,color:"#E1EFE8",textAlign:"center",marginTop:19,lineHeight:18,paddingHorizontal:14},homeFooterDecor:{flexDirection:"row",alignItems:"center",justifyContent:"center",gap:13,marginTop:20},homeFooterLine:{height:2,width:48,backgroundColor:"#E9BE54",borderRadius:2},homeFooterCross:{fontSize:26,color:"#F4C85D",fontWeight:"900"},button:{backgroundColor:C.blue,borderRadius:10,paddingVertical:13,paddingHorizontal:14,alignItems:"center",justifyContent:"center",flex:1,marginTop:9},buttonOutline:{backgroundColor:C.white,borderWidth:1,borderColor:C.blue},buttonText:{color:C.white,fontSize:13,fontWeight:"800"},dailyHead:{flexDirection:"row",justifyContent:"space-between",alignItems:"center"},sectionTitle:{fontSize:19,fontWeight:"900",color:C.ink,marginTop:21,marginBottom:12},kicker:{fontSize:10,color:C.blue,fontWeight:"900",letterSpacing:1.1},dailyCard:{backgroundColor:C.white,borderRadius:17,padding:18,borderWidth:1,borderColor:C.line,marginBottom:8},dailyRef:{fontSize:16,fontWeight:"900",color:C.blue},dailyText:{fontSize:17,lineHeight:28,color:C.ink,marginTop:9},dailyFoot:{fontSize:12,color:C.blue,fontWeight:"800",marginTop:13},resumeCard:{backgroundColor:C.white,borderRadius:16,padding:17,flexDirection:"row",alignItems:"center",borderWidth:1,borderColor:C.line},cardTitle:{fontSize:16,fontWeight:"900",color:C.ink},muted:{fontSize:12,color:C.muted,lineHeight:19,marginTop:5},cardArrow:{fontSize:26,color:C.blue,marginLeft:10},twoCards:{flexDirection:"row",gap:12},testamentCard:{flex:1,backgroundColor:C.pale,borderRadius:15,padding:16,minHeight:120,borderWidth:1,borderColor:"#BEDAF7"},cardEmoji:{fontSize:26,marginBottom:9},innerHomeBar:{flexDirection:"row",alignItems:"center",justifyContent:"space-between",marginBottom:9,paddingVertical:2},innerHomeButton:{flexDirection:"row",alignItems:"center",gap:7,alignSelf:"flex-start",backgroundColor:"#E3F2E8",borderWidth:1,borderColor:"#A8CFB6",borderRadius:12,paddingHorizontal:13,paddingVertical:8},innerHomeIcon:{fontSize:21,color:"#0E7658",fontWeight:"900",lineHeight:23},innerHomeText:{fontSize:13,color:"#0D634B",fontWeight:"900"},innerPageTag:{fontSize:11,color:"#6A8577",fontWeight:"800"},readerHeader:{backgroundColor:"#E3F2E8",marginHorizontal:-17,marginTop:0,paddingHorizontal:10,paddingVertical:7,flexDirection:"row",alignItems:"center",gap:5,borderBottomWidth:1,borderColor:"#C5DFD0"},headerAction:{width:38,height:42,alignItems:"center",justifyContent:"center",borderRadius:9,backgroundColor:"#D7EDE0"},headerActionText:{fontSize:22,color:C.green,fontWeight:"800"},bookChapter:{flex:1,minWidth:0,alignItems:"center",paddingHorizontal:4,paddingVertical:10,borderWidth:1.5,borderColor:"#7DB99A",borderRadius:9,backgroundColor:"#F5FBF7"},bookChapterText:{fontSize:14,color:"#175B43",fontWeight:"800"},chapterStrip:{marginHorizontal:-17,backgroundColor:"#F0F8F3",maxHeight:64,borderBottomWidth:1,borderColor:"#D3E5D9"},chapterStripContent:{paddingHorizontal:12,alignItems:"center",gap:10},chapterPill:{width:40,height:40,borderRadius:23,borderWidth:1.3,borderColor:"#8BB99E",backgroundColor:"#F8FCF9",alignItems:"center",justifyContent:"center",marginVertical:8},chapterPillActive:{backgroundColor:C.green,borderColor:C.green},chapterPillText:{fontSize:16,color:"#244A39",fontWeight:"700"},chapterPillTextActive:{color:C.white},readerActions:{flexDirection:"row",alignItems:"center",justifyContent:"space-between",marginTop:14,paddingHorizontal:2,paddingBottom:8},readerTitle:{fontSize:19,fontWeight:"900",color:"#174B37",flexShrink:1},inlineActions:{flexDirection:"row",gap:9,alignItems:"center"},inlineActionText:{color:"#087A5C",fontSize:12,fontWeight:"900"},verseList:{backgroundColor:"#F7FBF8",paddingHorizontal:9,paddingVertical:8,marginTop:8,borderRadius:14,borderWidth:1,borderColor:"#D8E9DE"},verseRow:{flexDirection:"row",alignItems:"flex-start",paddingVertical:12,borderBottomWidth:1,borderBottomColor:"#E5F0E8",gap:8},verseActive:{backgroundColor:"#DDF2E4",borderRadius:8,paddingHorizontal:7},verseNumber:{fontSize:16,color:"#14704F",fontWeight:"800",minWidth:20,marginTop:2},verseText:{flex:1,color:"#18382D",fontSize:18,lineHeight:28,fontFamily:"sans-serif"},copyright:{fontSize:10,color:"#657C70",lineHeight:16,paddingVertical:12},chapterFooter:{flexDirection:"row",gap:10,marginTop:10},emptyBox:{backgroundColor:"#F6FBF7",padding:20,borderRadius:14,marginTop:16,borderWidth:1,borderColor:"#CDE2D4"},emptyTitle:{fontSize:18,fontWeight:"900",color:C.ink},error:{color:C.red,backgroundColor:"#FCEBEC",padding:13,borderRadius:10,marginTop:12,lineHeight:20},pageHeading:{fontSize:27,fontWeight:"900",color:C.ink,marginTop:9,marginBottom:8},searchTopBar:{flexDirection:"row",justifyContent:"flex-start",marginBottom:8},searchHomeButton:{flexDirection:"row",alignItems:"center",alignSelf:"flex-start",gap:8,backgroundColor:"#EAF4FF",borderWidth:1,borderColor:C.blue,borderRadius:12,paddingHorizontal:16,paddingVertical:10},searchHomeIcon:{fontSize:22,color:C.blue,fontWeight:"900",lineHeight:24},searchHomeText:{fontSize:14,color:C.blue,fontWeight:"900"},searchLoading:{backgroundColor:C.white,borderRadius:14,padding:18,alignItems:"center",gap:10,marginTop:14},searchResultCount:{fontSize:13,color:C.blue,fontWeight:"800",marginTop:18,marginBottom:4},searchOpenHint:{fontSize:11,color:C.blue,fontWeight:"800",marginTop:9},searchInput:{backgroundColor:"#F8FCF9",borderWidth:1,borderColor:"#BDD9C8",borderRadius:12,padding:14,color:C.ink,fontSize:15,marginTop:17,marginBottom:8},resultCard:{backgroundColor:"#F8FCF9",borderWidth:1,borderColor:"#C7E0D0",borderRadius:13,padding:15,marginTop:12},resultText:{fontSize:15,color:C.ink,lineHeight:24,marginTop:8},savedRow:{backgroundColor:"#F7FBF8",borderRadius:13,padding:15,marginBottom:9,borderWidth:1,borderColor:"#C9E1D1"},settingsTopBar:{flexDirection:"row",justifyContent:"flex-start",marginBottom:8},settingsHomeButton:{flexDirection:"row",alignItems:"center",alignSelf:"flex-start",gap:8,backgroundColor:"#EAF4FF",borderWidth:1,borderColor:C.blue,borderRadius:12,paddingHorizontal:16,paddingVertical:10},settingsHomeIcon:{fontSize:22,color:C.blue,fontWeight:"900",lineHeight:24},settingsHomeText:{fontSize:14,color:C.blue,fontWeight:"900"},settingsCard:{backgroundColor:"#F8FCF9",borderRadius:16,padding:16,borderWidth:1,borderColor:"#C9E1D1",marginTop:16},translationName:{fontSize:19,fontWeight:"900",color:C.ink,marginTop:8},translationId:{fontSize:11,color:C.muted,marginTop:4},translationOption:{flexDirection:"row",alignItems:"center",justifyContent:"space-between",gap:10,backgroundColor:"#EDF7F0",padding:12,borderRadius:11,marginTop:8,borderWidth:1,borderColor:"#C6DFCE"},translationOptionActive:{borderColor:C.green,borderWidth:2,backgroundColor:"#E0F2E6"},translationOptionTitle:{fontSize:14,fontWeight:"800",color:C.ink},translationCheck:{fontSize:11,fontWeight:"800",color:C.blue},audioAvailabilityMessage:{fontSize:12,lineHeight:19,padding:12,borderRadius:10,marginTop:10},audioAvailable:{color:"#166534",backgroundColor:"#DCFCE7"},audioUnavailable:{color:"#991B1B",backgroundColor:"#FEE2E2"},audioCheckNeutral:{color:C.ink,backgroundColor:"#EEF3F8"},versionRow:{backgroundColor:"#F4F8FC",padding:13,borderRadius:11,marginTop:9,borderWidth:1,borderColor:C.line},versionSelected:{borderColor:C.blue,borderWidth:2},linkText:{fontSize:11,color:C.blue,marginTop:8},noteCard:{backgroundColor:C.white,borderRadius:14,padding:14,marginTop:12},noteInput:{minHeight:90,color:C.ink,textAlignVertical:"top",padding:10},modalShade:{flex:1,backgroundColor:"rgba(0,0,0,.48)",flexDirection:"row"},scrim:{flex:1},drawer:{width:"84%",maxWidth:390,backgroundColor:C.white},drawerHead:{height:58,backgroundColor:"#0D6B50",paddingHorizontal:16,flexDirection:"row",alignItems:"center",justifyContent:"space-between"},drawerTitle:{color:C.white,fontSize:19,fontWeight:"900"},closeText:{fontSize:25,color:C.blue,fontWeight:"700"},drawerSearch:{margin:12,padding:12,borderRadius:8,borderWidth:1,borderColor:C.line,color:C.ink},drawerItem:{paddingHorizontal:17,paddingVertical:15,borderBottomWidth:1,borderBottomColor:"#E3E7EC",flexDirection:"row",justifyContent:"space-between",alignItems:"center"},drawerItemActive:{backgroundColor:"#E2F2E7"},drawerItemText:{fontSize:16,color:C.ink},drawerCount:{fontSize:11,color:C.muted},pickerPanel:{backgroundColor:C.white,width:"100%",maxHeight:"88%",marginTop:"auto",borderTopLeftRadius:18,borderTopRightRadius:18,overflow:"hidden"},pickerHead:{height:58,backgroundColor:"#E4F2E8",paddingHorizontal:15,flexDirection:"row",alignItems:"center",justifyContent:"space-between"},pickerTitle:{fontSize:19,color:C.blue,fontWeight:"800"},cancelText:{fontSize:15,color:C.blue,fontWeight:"700"},pickerTabs:{height:48,backgroundColor:"#0D7255",flexDirection:"row"},pickerTab:{flex:1,alignItems:"center",justifyContent:"center",borderBottomWidth:3,borderBottomColor:"transparent"},pickerTabActive:{borderBottomColor:"#F2CC70"},pickerTabText:{fontSize:13,color:"#FFFFFF",fontWeight:"800"},pickerBookList:{paddingBottom:20},pickerBookItem:{paddingHorizontal:18,paddingVertical:14,borderBottomWidth:1,borderBottomColor:"#D5D5D5",flexDirection:"row",justifyContent:"space-between"},pickerBookText:{fontSize:17,color:C.ink},pickerGrid:{flexDirection:"row",flexWrap:"wrap",justifyContent:"space-around",padding:10},pickerNumber:{width:"18%",height:64,alignItems:"center",justifyContent:"center",marginVertical:4,borderRadius:32},pickerNumberActive:{backgroundColor:"#0E7658"},pickerNumberText:{fontSize:19,color:C.ink}
+planIntroCard:{backgroundColor:"#E4F3E9",borderRadius:18,padding:18,borderWidth:1,borderColor:"#BBDCC7",marginTop:16,alignItems:"flex-start"},
+planIntroIcon:{fontSize:28,marginBottom:8},
+planIntroTitle:{fontSize:18,fontWeight:"900",color:"#15563E"},
+planIntroText:{fontSize:13,color:"#536F61",lineHeight:21,marginTop:6},
+planTemplateCard:{flexDirection:"row",alignItems:"center",gap:11,backgroundColor:"#F8FCF9",borderWidth:1,borderColor:"#CFE2D5",borderRadius:15,padding:13,marginTop:10},
+planTemplateActive:{borderColor:"#0E7658",borderWidth:2,backgroundColor:"#E6F4EA"},
+planTemplateIcon:{width:42,height:42,borderRadius:14,backgroundColor:"#D9EEE0",alignItems:"center",justifyContent:"center"},
+planTemplateIconText:{fontSize:21},
+planTemplateTitle:{fontSize:14,fontWeight:"900",color:"#174B37"},
+planTemplateSubtitle:{fontSize:10,color:"#0E7658",fontWeight:"800",marginTop:3},
+planTemplateDescription:{fontSize:11,color:"#60766B",lineHeight:16,marginTop:5},
+planRadio:{fontSize:20,color:"#0E7658",paddingHorizontal:2},
+planDetailsCard:{backgroundColor:"#FFFFFF",borderRadius:16,padding:16,borderWidth:1,borderColor:"#C9E1D1",marginTop:16},
+planDetailsEyebrow:{fontSize:9,color:"#0E7658",letterSpacing:1.2,fontWeight:"900"},
+planDetailsTitle:{fontSize:19,fontWeight:"900",color:"#174B37",marginTop:5},
+planSummaryCard:{backgroundColor:"#06483B",borderRadius:18,padding:17,marginTop:15,borderWidth:1,borderColor:"#1AAF81"},
+planSummaryEyebrow:{fontSize:10,color:"#AEE7CF",fontWeight:"900",letterSpacing:1},
+planSummaryTitle:{fontSize:21,color:"#FFFFFF",fontWeight:"900",marginTop:5},
+planSummaryMeta:{fontSize:11,color:"#D1E9DC",marginTop:7},
+planProgressTrack:{height:10,backgroundColor:"#1B6553",borderRadius:10,overflow:"hidden",marginTop:16},
+planProgressFill:{height:10,backgroundColor:"#F1C95B",borderRadius:10},
+planProgressNumbers:{flexDirection:"row",justifyContent:"space-between",alignItems:"center",marginTop:8},
+planProgressText:{fontSize:11,color:"#DDF0E5",fontWeight:"700"},
+planProgressPercent:{fontSize:13,color:"#F4D36F",fontWeight:"900"},
+planFinishedText:{fontSize:12,color:"#E3F6B9",fontWeight:"800",marginTop:12,lineHeight:18},
+planDayNavigator:{flexDirection:"row",alignItems:"center",justifyContent:"space-between",backgroundColor:"#E2F1E7",borderRadius:14,padding:10,marginTop:15},
+planDayArrow:{paddingVertical:8,paddingHorizontal:9,backgroundColor:"#F8FCF9",borderWidth:1,borderColor:"#BBD7C5",borderRadius:10},
+planDayArrowText:{fontSize:11,color:"#0D634B",fontWeight:"900"},
+planDayNumber:{fontSize:17,color:"#15563E",fontWeight:"900"},
+planDayHint:{fontSize:10,color:"#647B6F",marginTop:2},
+planDayCard:{backgroundColor:"#F8FCF9",borderRadius:16,padding:14,borderWidth:1,borderColor:"#C9E1D1",marginTop:12},
+planDayCardHead:{flexDirection:"row",alignItems:"center",justifyContent:"space-between",marginBottom:8},
+planDayCardTitle:{fontSize:17,color:"#174B37",fontWeight:"900"},
+planDayStatus:{fontSize:10,color:"#99630B",backgroundColor:"#FFF2D1",paddingHorizontal:9,paddingVertical:5,borderRadius:20,fontWeight:"900"},
+planDayStatusDone:{color:"#17613F",backgroundColor:"#D9F1E1"},
+planChapterRow:{flexDirection:"row",alignItems:"center",gap:10,paddingVertical:12,borderBottomWidth:1,borderBottomColor:"#E3EEE7"},
+planChapterRowDone:{backgroundColor:"#EAF6ED",borderRadius:10,paddingHorizontal:8},
+planChapterTitle:{fontSize:14,color:"#174B37",fontWeight:"900"},
+planChapterSubtitle:{fontSize:10,color:"#6B8075",marginTop:3},
+planChapterCheck:{width:34,height:34,borderRadius:18,borderWidth:1.5,borderColor:"#8DB99C",alignItems:"center",justifyContent:"center",backgroundColor:"#FFFFFF"},
+planChapterCheckDone:{backgroundColor:"#0E7658",borderColor:"#0E7658"},
+planChapterCheckText:{fontSize:17,color:"#0E7658",fontWeight:"900"},
+planActionRow:{flexDirection:"row",gap:10,alignItems:"stretch",marginTop:4},
+planFootnote:{fontSize:11,color:"#647A6E",lineHeight:18,marginTop:12},
+planFeedback:{fontSize:12,color:"#155B40",backgroundColor:"#E1F2E5",borderWidth:1,borderColor:"#BBDCC5",borderRadius:11,padding:12,marginTop:12,lineHeight:18},
+planManageCard:{backgroundColor:"#F8FCF9",borderWidth:1,borderColor:"#D1E3D7",borderRadius:15,padding:15,marginTop:18,marginBottom:14},
+planManageTitle:{fontSize:15,color:"#174B37",fontWeight:"900"},
+planConfirmText:{fontSize:12,color:"#8A3E27",marginTop:12,lineHeight:18},
+
 });

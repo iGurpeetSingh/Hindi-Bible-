@@ -6,10 +6,13 @@ const KEYS = {
   bookmarks: "hb_bookmarks",
   history: "hb_history",
   notes: "hb_notes",
-  fontSize: "hb_font_size"
+  fontSize: "hb_font_size",
+  readingPlan: "hb_reading_plan"
 };
 
 export type SavedReference = { id: string; reference: string; bookId: string; chapter: number; createdAt: number };
+
+export type ReadingPlanProgress = { planId: string; startDate: string; completedChapters: string[]; updatedAt: number };
 
 async function readJSON<T>(key: string, fallback: T): Promise<T> {
   try { const value = await AsyncStorage.getItem(key); return value ? JSON.parse(value) as T : fallback; }
@@ -28,5 +31,8 @@ export const storage = {
   getNotes: () => readJSON<Record<string,string>>(KEYS.notes, {}),
   setNotes: (value: Record<string,string>) => AsyncStorage.setItem(KEYS.notes, JSON.stringify(value)),
   getFontSize: async () => Number(await AsyncStorage.getItem(KEYS.fontSize)) || 19,
-  setFontSize: (value: number) => AsyncStorage.setItem(KEYS.fontSize, String(value))
+  setFontSize: (value: number) => AsyncStorage.setItem(KEYS.fontSize, String(value)),
+  getReadingPlan: () => readJSON<ReadingPlanProgress | null>(KEYS.readingPlan, null),
+  setReadingPlan: (value: ReadingPlanProgress) => AsyncStorage.setItem(KEYS.readingPlan, JSON.stringify(value)),
+  clearReadingPlan: () => AsyncStorage.removeItem(KEYS.readingPlan)
 };
