@@ -16,6 +16,9 @@ export type ApiBible = {
   languageName?: string;
   numberOfBooks?: number;
   totalNumberOfChapters?: number;
+  availableFormats?: string[];
+  listOfBooksApiLink?: string;
+  simpleCompleteTranslationApiLink?: string;
   licenseUrl?: string;
   licenseNotice?: string;
   license?: { commercialUse?: "allowed" | "not-allowed"; derivatives?: "allowed" | "not-allowed" };
@@ -131,11 +134,24 @@ type ChapterResponse = {
 
 async function request<T>(path: string): Promise<T> {
   const response = await fetch(`${BASE}${path}`);
+  const contentType = response.headers.get("content-type") || "";
   if (!response.ok) {
-    const detail = await response.text().catch(() => "");
-    throw new Error(`Free Bible API error ${response.status}: ${detail || response.statusText}`);
+    const detail = contentType.includes("json")
+      ? (await response.text().catch(() => "")).slice(0, 180)
+      : "";
+    if (response.status === 404 && (!contentType.includes("json") || contentType.includes("html"))) {
+      throw new Error(`Bible API 404: यह Translation या अध्याय API पर उपलब्ध नहीं है। Requested path: ${path}`);
+    }
+    throw new Error(`Bible API error ${response.status}: ${detail || response.statusText}`);
   }
-  return response.json() as Promise<T>;
+  if (contentType.includes("text/html")) {
+    throw new Error(`Bible API ने JSON के बजाय HTML पेज लौटाया। Translation या अध्याय URL जाँचें: ${path}`);
+  }
+  try {
+    return await response.json() as T;
+  } catch {
+    throw new Error(`Bible API से मान्य JSON नहीं मिला: ${path}`);
+  }
 }
 
 // No API key, account, or payment is required by this provider.
@@ -162,10 +178,34 @@ function isHindiTranslation(translation: ApiBible & { languageEnglishName?: stri
   return hasHindiCode || hasExactHindiName;
 }
 
+async function hasUsableHindiBibleApi(translation: ApiBible): Promise<boolean> {
+  try {
+    if (!translation.id || !/^[a-zA-Z0-9_-]+$/.test(translation.id)) return false;
+    if (translation.availableFormats?.length && !translation.availableFormats.includes("json")) return false;
+
+    // A Hindi title/language tag alone is not enough: confirm the API really
+    // serves the canonical book list and an actual chapter for this exact ID.
+    const id = encodeURIComponent(translation.id);
+    const books = await request<BooksResponse>(`/${id}/books.json`);
+    if (!(books.books || []).some(book => book.id === "GEN")) return false;
+
+    const genesis = await request<ChapterResponse>(`/${id}/GEN/1.simple.json`);
+    return (genesis.chapter?.content || []).some(
+      item => item.type === "verse" && typeof item.number === "number" && !!item.text?.trim()
+    );
+  } catch {
+    return false;
+  }
+}
+
 export async function getHindiBibles(_unusedKey = ""): Promise<ApiBible[]> {
   const result = await request<TranslationResponse>("/available_translations.json");
-  return (result.translations || [])
-    .filter(isHindiTranslation)
+  const candidates = (result.translations || []).filter(isHindiTranslation);
+  const verified = await Promise.all(
+    candidates.map(async translation => (await hasUsableHindiBibleApi(translation)) ? translation : null)
+  );
+  return verified
+    .filter((translation): translation is ApiBible => translation !== null)
     .map(t => ({ ...t, title: t.name || t.title || t.id }));
 }
 
