@@ -1,10 +1,11 @@
 import React, { useEffect, useMemo, useState } from "react";
 import Svg, { Circle, Line, Path, Rect, Defs, LinearGradient, Stop } from "react-native-svg";
 import {
-  ActivityIndicator, Alert, Modal, Platform, Pressable, SafeAreaView,
+  ActivityIndicator, Alert, Modal, Platform, Pressable, SafeAreaView, Share,
   ScrollView, StatusBar, StyleSheet, Text, TextInput, View, Linking, Image, ImageBackground
 } from "react-native";
 import * as Speech from "expo-speech";
+import * as Clipboard from "expo-clipboard";
 import { useAudioPlayer, useAudioPlayerStatus, setAudioModeAsync } from "expo-audio";
 import { Directory, File, Paths } from "expo-file-system";
 import { getChapterAudio, ChapterAudio } from "./src/lib/audioApi";
@@ -70,6 +71,12 @@ export default function App() {
   const [results,setResults]=useState<{reference:string;passage?:Passage}[]>([]);
   const [bookmarks,setBookmarks]=useState<SavedReference[]>([]);
   const [history,setHistory]=useState<SavedReference[]>([]);
+  const [selectedVerse,setSelectedVerse]=useState<number|null>(null);
+  const [verseMenuVisible,setVerseMenuVisible]=useState(false);
+  const [noteModalVisible,setNoteModalVisible]=useState(false);
+  const [noteDraft,setNoteDraft]=useState("");
+  const [verseNotes,setVerseNotes]=useState<Record<string,string>>({});
+  const [verseHighlights,setVerseHighlights]=useState<Record<string,string>>({});
   const [fontSize,setFontSize]=useState(16);
   const [daily,setDaily]=useState<Passage|null>(null);
   const [drawer,setDrawer]=useState(false);
@@ -97,8 +104,8 @@ export default function App() {
 
   useEffect(()=>{
     (async()=>{
-      const [id,bm,hist,fz,savedPlan]=await Promise.all([storage.getBibleId(),storage.getBookmarks(),storage.getHistory(),storage.getFontSize(),storage.getReadingPlan()]);
-      setBookmarks(bm);setHistory(hist);setPlanProgress(savedPlan);setFontSize(18); if(fz!==18) await storage.setFontSize(18);
+      const [id,bm,hist,fz,savedPlan,savedNotes,savedHighlights]=await Promise.all([storage.getBibleId(),storage.getBookmarks(),storage.getHistory(),storage.getFontSize(),storage.getReadingPlan(),storage.getNotes(),storage.getHighlights()]);
+      setBookmarks(bm);setHistory(hist);setPlanProgress(savedPlan);setVerseNotes(savedNotes);setVerseHighlights(savedHighlights);setFontSize(18); if(fz!==18) await storage.setFontSize(18);
       try {
         const available=await getHindiBibles();
         setVersions(available);
@@ -144,7 +151,7 @@ export default function App() {
   const selectedPlanTemplate=READING_PLAN_TEMPLATES.find(item=>item.id===planSelectedId)||READING_PLAN_TEMPLATES[0];
 
   async function openChapter(nextBook:BibleBook,nextChapter:number) {
-    setBook(nextBook);setChapter(nextChapter);setTab("bible");setDrawer(false);setPicker(false);setPassage(null);setError("");
+    setBook(nextBook);setChapter(nextChapter);setTab("bible");setDrawer(false);setPicker(false);setPassage(null);setSelectedVerse(null);setVerseMenuVisible(false);setError("");
     await Speech.stop();setSpeaking(false);
     if(!bibleId){setError("पहले Settings में जाकर Hindi Bible Translation चुनें।");return;}
     setLoading(true);
@@ -215,6 +222,72 @@ export default function App() {
     const updated=exists?bookmarks.filter(x=>x.id!==id):[item,...bookmarks];
     setBookmarks(updated);await storage.setBookmarks(updated);
     Alert.alert(exists?"बुकमार्क हटाया":"बुकमार्क सेव हुआ",exists?"यह अध्याय सेव सूची से हटा दिया गया।":"यह अध्याय आपकी सेव सूची में है।");
+  }
+
+  function verseStorageKey(verse:number) { return `${book.id}.${chapter}.${verse}`; }
+  const activeVerse=selectedVerse===null?null:verseList.find(item=>item.number===selectedVerse)||null;
+  const activeVerseKey=selectedVerse===null?"":verseStorageKey(selectedVerse);
+  const activeVerseReference=selectedVerse===null?"":`${book.hindi} ${chapter}:${selectedVerse}`;
+
+  async function copySelectedVerse() {
+    if(!activeVerse||!activeVerseReference)return;
+    try {
+      await Clipboard.setStringAsync(`${activeVerse.text} — ${activeVerseReference}`);
+      setVerseMenuVisible(false);
+      Alert.alert("कॉपी हो गया","वचन और उसका Reference Clipboard में कॉपी कर दिया गया।");
+    } catch { Alert.alert("कॉपी नहीं हुआ","Clipboard की अनुमति उपलब्ध नहीं है।"); }
+  }
+
+  async function shareSelectedVerse() {
+    if(!activeVerse||!activeVerseReference)return;
+    try {
+      await Share.share({message:`${activeVerse.text}\n\n— ${activeVerseReference}`});
+      setVerseMenuVisible(false);
+    } catch { Alert.alert("Share नहीं हुआ","वचन शेयर करते समय समस्या आई।"); }
+  }
+
+  async function toggleVerseBookmark() {
+    if(!activeVerse||selectedVerse===null)return;
+    const id=`verse:${activeVerseKey}`;
+    const exists=bookmarks.some(item=>item.id===id);
+    const item:SavedReference={id,reference:activeVerseReference,bookId:book.id,chapter,verse:selectedVerse,createdAt:Date.now()};
+    const updated=exists?bookmarks.filter(entry=>entry.id!==id):[item,...bookmarks];
+    setBookmarks(updated);await storage.setBookmarks(updated);
+    setVerseMenuVisible(false);
+    Alert.alert(exists?"वचन Bookmark हटाया":"वचन Bookmark सेव हुआ",exists?"यह वचन सेव सूची से हटा दिया गया।":"यह वचन आपकी सेव सूची में सुरक्षित है।");
+  }
+
+  function openVerseNote() {
+    if(selectedVerse===null)return;
+    setNoteDraft(verseNotes[activeVerseKey]||"");
+    setVerseMenuVisible(false);
+    setNoteModalVisible(true);
+  }
+
+  async function saveVerseNote() {
+    if(selectedVerse===null)return;
+    const next={...verseNotes};
+    if(noteDraft.trim()) next[activeVerseKey]=noteDraft.trim();
+    else delete next[activeVerseKey];
+    setVerseNotes(next);
+    await storage.setNotes(next);
+    setNoteModalVisible(false);
+    Alert.alert("नोट सेव हुआ",noteDraft.trim()?"आपका नोट इस वचन के साथ सेव कर दिया गया।":"खाली नोट हटा दिया गया।");
+  }
+
+  async function setVerseHighlight(color:string) {
+    if(selectedVerse===null)return;
+    const next={...verseHighlights,[activeVerseKey]:color};
+    setVerseHighlights(next);
+    await storage.setHighlights(next);
+    setVerseMenuVisible(false);
+  }
+
+  async function playSelectedVerse() {
+    if(selectedVerse===null)return;
+    const index=verseList.findIndex(item=>item.number===selectedVerse);
+    setVerseMenuVisible(false);
+    if(index>=0) await speakFrom(index);
   }
 
   async function speakFrom(index:number) {
@@ -496,7 +569,7 @@ export default function App() {
         {!!error&&<Text style={s.error}>{error}</Text>}
         {!passage&&!loading&&!error&&<View style={s.emptyBox}><Text style={s.emptyTitle}>बाइबल पढ़ना शुरू करें</Text><Text style={s.muted}>ऊपर से पुस्तक और अध्याय चुनें।</Text><Button label="पुस्तक चुनें" onPress={()=>openPicker("BOOK")}/></View>}
         {passage&&<View style={s.verseList}>
-          {verseList.map((v,i)=><Pressable key={v.number||i} onPress={()=>speaking?stopSpeech():speakFrom(i)} style={[s.verseRow,speaking&&speechVerse===i&&s.verseActive]}>
+          {verseList.map((v,i)=><Pressable key={v.number||i} onPress={()=>{setSelectedVerse(v.number||i+1);setVerseMenuVisible(true);}} onLongPress={()=>{setSelectedVerse(v.number||i+1);setVerseMenuVisible(true);}} delayLongPress={280} {...({onContextMenu:(event:any)=>{event.preventDefault?.();setSelectedVerse(v.number||i+1);setVerseMenuVisible(true);}} as any)} style={[s.verseRow,speaking&&speechVerse===i&&s.verseActive,selectedVerse===(v.number||i+1)&&s.verseSelected,verseHighlights[`${book.id}.${chapter}.${v.number||i+1}`]?{backgroundColor:verseHighlights[`${book.id}.${chapter}.${v.number||i+1}`]}:null]}>
             {v.number>0&&<Text style={s.verseNumber}>{v.number}</Text>}
             <Text style={[s.verseText,{fontSize:Math.min(fontSize,19),lineHeight:Math.min(fontSize,19)*1.55}]}>{v.text}</Text>
           </Pressable>)}
@@ -739,6 +812,52 @@ export default function App() {
         {pickerTab==="VERSE"&&<ScrollView contentContainerStyle={s.pickerGrid}>{(verseNumbers.length?verseNumbers:Array.from({length:31},(_,i)=>i+1)).map(n=><Pressable key={n} onPress={()=>{setPicker(false);if(passage){setSpeechVerse(Math.max(0,verseList.findIndex(v=>v.number===n)));}}} style={[s.pickerNumber,n===speechVerse+1&&s.pickerNumberActive]}><Text style={[s.pickerNumberText,n===speechVerse+1&&{color:C.white}]}>{n}</Text></Pressable>)}</ScrollView>}
       </View></View>
     </Modal>
+
+    <Modal visible={verseMenuVisible} transparent animationType="fade" onRequestClose={()=>setVerseMenuVisible(false)}>
+      <Pressable style={s.actionScrim} onPress={()=>setVerseMenuVisible(false)}>
+        <Pressable style={s.actionSheet} onPress={()=>{}}>
+          <View style={s.actionSheetHandle}/>
+          <View style={s.actionSheetHeader}>
+            <View style={{flex:1}}>
+              <Text style={s.actionSheetTitle}>{activeVerseReference||"वचन चुनें"}</Text>
+              <Text style={s.actionSheetSubtitle} numberOfLines={2}>{activeVerse?.text||""}</Text>
+            </View>
+            <Pressable onPress={()=>setVerseMenuVisible(false)} hitSlop={12}><Text style={s.closeText}>✕</Text></Pressable>
+          </View>
+          <View style={s.actionGrid}>
+            <Pressable style={[s.actionTile,{backgroundColor:"#E84B45"}]} onPress={copySelectedVerse}><Text style={s.actionTileIcon}>▢</Text><Text style={s.actionTileText}>Copy</Text></Pressable>
+            <Pressable style={[s.actionTile,{backgroundColor:"#087DF0"}]} onPress={shareSelectedVerse}><Text style={s.actionTileIcon}>↗</Text><Text style={s.actionTileText}>Share Text</Text></Pressable>
+            <Pressable style={[s.actionTile,{backgroundColor:"#743A2D"}]} onPress={toggleVerseBookmark}><Text style={s.actionTileIcon}>▮</Text><Text style={s.actionTileText}>Bookmark</Text></Pressable>
+            <Pressable style={[s.actionTile,{backgroundColor:"#E74799"}]} onPress={openVerseNote}><Text style={s.actionTileIcon}>✎</Text><Text style={s.actionTileText}>Notes</Text></Pressable>
+            <View style={[s.actionTile,{backgroundColor:"#168DE0",paddingBottom:7}]}>
+              <Text style={s.actionTileIcon}>▤</Text><Text style={s.actionTileText}>Highlight</Text>
+              <View style={s.highlightSwatches}>
+                {["#FFF1A8","#C8F0D2","#CDE7FF","#F7D2E8"].map(color=><Pressable key={color} onPress={()=>setVerseHighlight(color)} style={[s.highlightSwatch,{backgroundColor:color}]}/>)}
+              </View>
+            </View>
+            <Pressable style={[s.actionTile,{backgroundColor:"#56235A"}]} onPress={()=>{setVerseMenuVisible(false);toggleBookmark();}}><Text style={s.actionTileIcon}>▰</Text><Text style={s.actionTileText}>Bookmark Chapter</Text></Pressable>
+            <Pressable style={[s.actionTile,{backgroundColor:"#48A95B"}]} onPress={playSelectedVerse}><Text style={s.actionTileIcon}>▶</Text><Text style={s.actionTileText}>Audio Bible</Text></Pressable>
+          </View>
+          <Text style={s.actionFootnote}>वचन पर टैप या Long Press करें। Desktop पर Right Click भी काम करता है।</Text>
+        </Pressable>
+      </Pressable>
+    </Modal>
+
+    <Modal visible={noteModalVisible} transparent animationType="slide" onRequestClose={()=>setNoteModalVisible(false)}>
+      <View style={s.actionScrim}>
+        <View style={s.noteEditor}>
+          <View style={s.actionSheetHeader}>
+            <View style={{flex:1}}><Text style={s.actionSheetTitle}>वचन के नोट्स</Text><Text style={s.actionSheetSubtitle}>{activeVerseReference}</Text></View>
+            <Pressable onPress={()=>setNoteModalVisible(false)} hitSlop={12}><Text style={s.closeText}>✕</Text></Pressable>
+          </View>
+          <TextInput value={noteDraft} onChangeText={setNoteDraft} multiline placeholder="इस वचन के बारे में अपना विचार लिखें…" placeholderTextColor={C.muted} style={s.noteEditorInput}/>
+          <View style={s.noteEditorButtons}>
+            <Pressable style={s.noteCancelButton} onPress={()=>setNoteModalVisible(false)}><Text style={s.noteCancelText}>रद्द करें</Text></Pressable>
+            <Pressable style={s.noteSaveButton} onPress={saveVerseNote}><Text style={s.noteSaveText}>नोट सेव करें</Text></Pressable>
+          </View>
+        </View>
+      </View>
+    </Modal>
   </SafeAreaView>;
 }
 
@@ -825,5 +944,26 @@ planFeedback:{fontSize:12,color:"#155B40",backgroundColor:"#E1F2E5",borderWidth:
 planManageCard:{backgroundColor:"#F8FCF9",borderWidth:1,borderColor:"#D1E3D7",borderRadius:15,padding:15,marginTop:18,marginBottom:14},
 planManageTitle:{fontSize:15,color:"#174B37",fontWeight:"900"},
 planConfirmText:{fontSize:12,color:"#8A3E27",marginTop:12,lineHeight:18},
+  verseSelected:{backgroundColor:"#E3F1FF",borderRadius:10,borderLeftWidth:4,borderLeftColor:"#087DF0"},
+  actionScrim:{flex:1,backgroundColor:"rgba(9,20,32,0.48)",justifyContent:"flex-end"},
+  actionSheet:{backgroundColor:"#FFFFFF",borderTopLeftRadius:22,borderTopRightRadius:22,paddingHorizontal:16,paddingTop:10,paddingBottom:24,width:"100%",maxWidth:480,alignSelf:"center"},
+  actionSheetHandle:{width:42,height:5,borderRadius:4,backgroundColor:"#CBD5E1",alignSelf:"center",marginBottom:14},
+  actionSheetHeader:{flexDirection:"row",alignItems:"flex-start",gap:12,marginBottom:14},
+  actionSheetTitle:{fontSize:17,fontWeight:"900",color:"#172B3A"},
+  actionSheetSubtitle:{fontSize:13,lineHeight:19,color:"#526477",marginTop:5},
+  actionGrid:{flexDirection:"row",flexWrap:"wrap",gap:10},
+  actionTile:{width:"31.5%",minHeight:86,borderRadius:13,alignItems:"center",justifyContent:"center",paddingHorizontal:5,paddingVertical:10},
+  actionTileIcon:{fontSize:24,color:"#FFFFFF",fontWeight:"900"},
+  actionTileText:{fontSize:11,color:"#FFFFFF",fontWeight:"800",textAlign:"center",marginTop:5},
+  highlightSwatches:{flexDirection:"row",gap:5,marginTop:6},
+  highlightSwatch:{width:14,height:14,borderRadius:7,borderWidth:1,borderColor:"rgba(255,255,255,.85)"},
+  actionFootnote:{fontSize:10,color:"#64748B",textAlign:"center",marginTop:14},
+  noteEditor:{width:"100%",maxWidth:480,alignSelf:"center",backgroundColor:"#FFFFFF",borderTopLeftRadius:22,borderTopRightRadius:22,padding:18,paddingBottom:28},
+  noteEditorInput:{minHeight:130,maxHeight:240,borderWidth:1,borderColor:"#CBD5E1",borderRadius:12,padding:12,color:"#172B3A",textAlignVertical:"top",fontSize:15,marginTop:10},
+  noteEditorButtons:{flexDirection:"row",justifyContent:"flex-end",gap:10,marginTop:14},
+  noteCancelButton:{paddingHorizontal:17,paddingVertical:12,borderRadius:10,backgroundColor:"#EEF2F6"},
+  noteCancelText:{color:"#334155",fontWeight:"800"},
+  noteSaveButton:{paddingHorizontal:18,paddingVertical:12,borderRadius:10,backgroundColor:"#087A5C"},
+  noteSaveText:{color:"#FFFFFF",fontWeight:"900"},
 
 });
