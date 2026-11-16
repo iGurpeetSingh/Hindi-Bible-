@@ -263,7 +263,7 @@ export default function App() {
           {[
             ["🎧","ऑडियो बाइबल"],["🔎","वचन खोजें"],["☆","बुकमार्क"],["🗓","पढ़ने की योजना"],["📝","नोट्स"],["💬","बाइबल अध्ययन"]
           ].map(([icon,label])=>label==="ऑडियो बाइबल"
-            ? <Pressable key={label} style={s.featureCard} onPress={()=>openAudioChapter(book,chapter)}><Text style={s.featureIcon}>{icon}</Text><Text style={s.featureLabel}>{label}</Text><Text style={s.comingSoon}>LISTEN NOW</Text></Pressable>
+            ? <Pressable key={label} style={s.featureCard} onPress={()=>openAudioChapter(book,chapter)}><Text style={s.featureIcon}>{icon}</Text><Text style={s.featureLabel}>{label}</Text></Pressable>
             : <View key={label} style={s.featureCard}><Text style={s.featureIcon}>{icon}</Text><Text style={s.featureLabel}>{label}</Text><Text style={s.comingSoon}>COMING SOON</Text></View>)}
         </View>
       </>}
