@@ -21,7 +21,9 @@ async function fetchJson<T>(url: string): Promise<T> {
 }
 
 function absoluteApiUrl(path: string): string {
-  if (path.startsWith("http")) return path;\n  if (path.startsWith("/api/")) return `https://bible.helloao.org${path}`;\n  return `${BASE}/${path.replace(/^\\//, "")}`;
+  if (path.startsWith("http")) return path;
+  if (path.startsWith("/api/")) return `https://bible.helloao.org${path}`;
+  return `${BASE}/${path.startsWith("/") ? path.slice(1) : path}`;
 }
 
 /**
@@ -35,7 +37,7 @@ export async function getChapterAudio(translationId: string, bookId: string, cha
   const timingsMap = data.thisChapterAudioTimings || {};
 
   return Promise.all(Object.entries(links)
-    .filter(([, audioUrl]) => typeof audioUrl === "string" && /^https?:\\/\\//i.test(audioUrl))
+    .filter(([, audioUrl]) => typeof audioUrl === "string" && (audioUrl.startsWith("https://") || audioUrl.startsWith("http://")))
     .map(async ([readerId, audioUrl]) => {
       const timingValue = timingsMap[readerId];
       let timings: number[] | null = null;
