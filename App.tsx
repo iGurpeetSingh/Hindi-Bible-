@@ -1052,8 +1052,6 @@ planConfirmText:{fontSize:10.5,color:"#6F3B2C",textAlign:"center",lineHeight:17}
 planConfirmActions:{flexDirection:"row",justifyContent:"center",gap:22,marginTop:8},
 planBottomWave:{marginTop:0,marginBottom:-1},
 
-,
-
  verseSelected:{backgroundColor:"#E3F1FF",borderRadius:10,borderLeftWidth:4,borderLeftColor:"#087DF0"},
  actionScrim:{flex:1,backgroundColor:"rgba(9,20,32,0.55)",justifyContent:"center",alignItems:"center",padding:16},
  actionSheet:{backgroundColor:"#FFFFFF",borderRadius:22,paddingHorizontal:16,paddingTop:12,paddingBottom:18,width:"100%",maxWidth:430,alignSelf:"center",maxHeight:"90%",overflow:"hidden",shadowColor:"#102A22",shadowOpacity:.2,shadowRadius:18,shadowOffset:{width:0,height:7},elevation:12},
