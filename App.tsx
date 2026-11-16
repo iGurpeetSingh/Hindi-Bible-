@@ -89,8 +89,9 @@ export default function App() {
           setError("हिंदी बाइबल अनुवाद अभी उपलब्ध नहीं है। इंटरनेट कनेक्शन जाँचें।");
         }
       } catch(e) {
-        if(id) setBibleId(id);
-        setError(e instanceof Error?e.message:"हिंदी बाइबल अनुवाद लोड नहीं हुए।");
+        setBibleId("");
+        setVersions([]);
+        setError(e instanceof Error?e.message:"हिंदी बाइबल अनुवाद सत्यापित नहीं हो सके। इंटरनेट कनेक्शन जाँचें।");
       } finally {setTranslationLoading(false);}
     })();
     return ()=>{Speech.stop();};

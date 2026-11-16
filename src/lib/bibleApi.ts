@@ -48,13 +48,31 @@ async function request<T>(path: string): Promise<T> {
 }
 
 // No API key, account, or payment is required by this provider.
+function isHindiLanguageName(value?: string): boolean {
+  const normalized = (value || "").trim().toLocaleLowerCase();
+  return normalized === "hindi"
+    || normalized === "हिंदी"
+    || normalized === "हिन्दी"
+    || /^hindi(?:\\s|\\(|-|$)/.test(normalized);
+}
+
+function isHindiTranslation(translation: ApiBible & { languageEnglishName?: string }): boolean {
+  const languageCode = (translation.language || "").trim().toLowerCase();
+  const languageTag = (translation.language_tag || "").trim().toLowerCase();
+  const hasHindiCode = languageCode === "hin"
+    || languageCode === "hi"
+    || languageTag === "hin"
+    || languageTag === "hi"
+    || languageTag.startsWith("hi-");
+  const hasExactHindiName = isHindiLanguageName(translation.languageName)
+    || isHindiLanguageName(translation.languageEnglishName);
+  return hasHindiCode || hasExactHindiName;
+}
+
 export async function getHindiBibles(_unusedKey = ""): Promise<ApiBible[]> {
   const result = await request<TranslationResponse>("/available_translations.json");
   return (result.translations || [])
-    .filter(t => {
-      const language = `${t.language || ""} ${t.languageName || ""} ${t.languageEnglishName || ""}`.toLowerCase();
-      return language.includes("hin") || language.includes("hindi") || language.includes("हिन्दी") || language.includes("हिंदी");
-    })
+    .filter(isHindiTranslation)
     .map(t => ({ ...t, title: t.name || t.title || t.id }));
 }
 
