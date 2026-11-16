@@ -233,6 +233,17 @@ export default function App() {
   const activeVerseKey=selectedVerse===null?"":verseStorageKey(selectedVerse);
   const activeVerseReference=selectedVerse===null?"":`${book.hindi} ${chapter}:${selectedVerse}`;
 
+  function selectVerseAndShowActions(verse:number) {
+    if(selectedVerse===verse && verseMenuVisible) { setVerseMenuVisible(false); return; }
+    setSelectedVerse(verse);setVerseMenuVisible(true);
+  }
+
+  async function toggleSelectedVerseHighlight() {
+    if(selectedVerse===null)return;
+    if(verseHighlights[activeVerseKey]) await clearVerseHighlight();
+    else await setVerseHighlight("#FFF1A8");
+  }
+
   async function copySelectedVerse() {
     if(!activeVerse||!activeVerseReference)return;
     try {
@@ -604,9 +615,9 @@ export default function App() {
         {!!error&&<Text style={s.error}>{error}</Text>}
         {!passage&&!loading&&!error&&<View style={s.emptyBox}><Text style={s.emptyTitle}>बाइबल पढ़ना शुरू करें</Text><Text style={s.muted}>ऊपर से पुस्तक और अध्याय चुनें।</Text><Button label="पुस्तक चुनें" onPress={()=>openPicker("BOOK")}/></View>}
         {passage&&<View style={s.verseList}>
-          {verseList.map((v,i)=><Pressable key={v.number||i} onPress={()=>setSelectedVerse(v.number||i+1)} onLongPress={()=>{setSelectedVerse(v.number||i+1);setVerseMenuVisible(true);}} delayLongPress={280} {...({onContextMenu:(event:any)=>{event.preventDefault?.();setSelectedVerse(v.number||i+1);setVerseMenuVisible(true);}} as any)} style={[s.verseRow,speaking&&speechVerse===i&&s.verseActive,selectedVerse===(v.number||i+1)&&s.verseSelected,verseHighlights[`${book.id}.${chapter}.${v.number||i+1}`]?{backgroundColor:verseHighlights[`${book.id}.${chapter}.${v.number||i+1}`]}:null]}>
-            {v.number>0&&<Text style={s.verseNumber}>{v.number}</Text>}
-            <Text style={[s.verseText,{fontSize:Math.min(fontSize,19),lineHeight:Math.min(fontSize,19)*1.55}]}>{v.text}</Text>
+          {verseList.map((v,i)=><Pressable key={v.number||i} onPress={()=>selectVerseAndShowActions(v.number||i+1)} {...({onContextMenu:(event:any)=>{event.preventDefault?.();selectVerseAndShowActions(v.number||i+1);}} as any)} style={[s.verseRow,speaking&&speechVerse===i&&s.verseActive,selectedVerse===(v.number||i+1)&&s.verseSelected,verseHighlights[`${book.id}.${chapter}.${v.number||i+1}`]?{backgroundColor:verseHighlights[`${book.id}.${chapter}.${v.number||i+1}`]}:null]}>
+            {v.number>0&&<Text style={[s.verseNumber,selectedVerse===(v.number||i+1)&&s.verseSelectedText]}>{v.number}</Text>}
+            <Text style={[s.verseText,{fontSize:Math.min(fontSize,19),lineHeight:Math.min(fontSize,19)*1.55},selectedVerse===(v.number||i+1)&&s.verseSelectedText]}>{v.text}</Text>
           </Pressable>)}
           <Text style={s.copyright}>{passage.reference} • {passage.copyright||"अनुवाद का लाइसेंस और श्रेय Settings में देखें।"}</Text>
         </View>}
@@ -862,37 +873,41 @@ export default function App() {
       </View></View>
     </Modal>
 
-    <Modal visible={verseMenuVisible} transparent animationType="fade" onRequestClose={()=>setVerseMenuVisible(false)}>
-      <Pressable style={s.actionScrim} onPress={()=>setVerseMenuVisible(false)}>
-        <Pressable style={s.actionSheet} onPress={()=>{}}>
-          <View style={s.actionSheetHandle}/>
-          <View style={s.actionSheetHeader}>
-            <View style={{flex:1}}>
-              <Text style={s.actionSheetTitle}>{activeVerseReference||"वचन चुनें"}</Text>
-              <Text style={s.actionSheetSubtitle} numberOfLines={2}>{activeVerse?.text||""}</Text>
-            </View>
-            <Pressable onPress={()=>setVerseMenuVisible(false)} hitSlop={12}><Text style={s.closeText}>✕</Text></Pressable>
-          </View>
-          <View style={s.actionGrid}>
-            <Pressable style={[s.actionTile,{backgroundColor:"#E84B45"}]} onPress={copySelectedVerse}><Text style={s.actionTileIcon}>▢</Text><Text style={s.actionTileText}>Copy</Text></Pressable>
-            <Pressable style={[s.actionTile,{backgroundColor:"#087DF0"}]} onPress={shareSelectedVerse}><Text style={s.actionTileIcon}>↗</Text><Text style={s.actionTileText}>Share Text</Text></Pressable>
-            <Pressable style={[s.actionTile,{backgroundColor:"#743A2D"}]} onPress={toggleVerseBookmark}><Text style={s.actionTileIcon}>▮</Text><Text style={s.actionTileText}>Bookmark</Text></Pressable>
-            <Pressable style={[s.actionTile,{backgroundColor:"#7951C7"}]} onPress={openVerseImageShare}><Text style={s.actionTileIcon}>▧</Text><Text style={s.actionTileText}>Image Share</Text></Pressable>
-            <Pressable style={[s.actionTile,{backgroundColor:"#E74799"}]} onPress={openVerseNote}><Text style={s.actionTileIcon}>✎</Text><Text style={s.actionTileText}>Notes</Text></Pressable>
-            <View style={[s.actionTile,{backgroundColor:"#168DE0",paddingBottom:7}]}>
-              <Text style={s.actionTileIcon}>▤</Text><Text style={s.actionTileText}>Highlight</Text>
-              <View style={s.highlightSwatches}>
-                {["#FFF1A8","#C8F0D2","#CDE7FF","#F7D2E8"].map(color=><Pressable key={color} onPress={()=>setVerseHighlight(color)} style={[s.highlightSwatch,{backgroundColor:color}]}/>)}
-                <Pressable onPress={clearVerseHighlight} style={[s.highlightSwatch,{backgroundColor:"#FFFFFF",alignItems:"center",justifyContent:"center"}]}><Text style={{fontSize:10,color:"#334155",fontWeight:"900"}}>×</Text></Pressable>
-              </View>
-            </View>
-            <Pressable style={[s.actionTile,{backgroundColor:"#56235A"}]} onPress={()=>{setVerseMenuVisible(false);toggleBookmark();}}><Text style={s.actionTileIcon}>▰</Text><Text style={s.actionTileText}>Bookmark Chapter</Text></Pressable>
-            <Pressable style={[s.actionTile,{backgroundColor:"#48A95B"}]} onPress={playSelectedVerse}><Text style={s.actionTileIcon}>▶</Text><Text style={s.actionTileText}>Audio Bible</Text></Pressable>
-          </View>
-          <Text style={s.actionFootnote}>वचन चुनने के लिए Tap करें। Actions के लिए Long Press या Desktop पर Right Click करें।</Text>
-        </Pressable>
-      </Pressable>
-    </Modal>
+    {tab==="bible"&&verseMenuVisible&&selectedVerse!==null&&<View pointerEvents="box-none" style={s.verseActionOverlay}>
+      <Pressable style={s.verseActionClose} onPress={()=>setVerseMenuVisible(false)} accessibilityRole="button" accessibilityLabel="वचन के विकल्प बंद करें"><Text style={s.verseActionCloseText}>×</Text></Pressable>
+      <View style={s.verseActionRow}>
+        <Pressable style={[s.verseActionLabel,{backgroundColor:"#7951C7"}]} onPress={openVerseImageShare}><Text style={s.verseActionLabelText}>Image Share</Text></Pressable>
+        <Pressable style={[s.verseActionIcon,{backgroundColor:"#7951C7"}]} onPress={openVerseImageShare} accessibilityRole="button" accessibilityLabel="Image Share"><Text style={s.verseActionIconText}>▧＋</Text></Pressable>
+      </View>
+      <View style={s.verseActionRow}>
+        <Pressable style={[s.verseActionLabel,{backgroundColor:"#087DF0"}]} onPress={shareSelectedVerse}><Text style={s.verseActionLabelText}>share Text</Text></Pressable>
+        <Pressable style={[s.verseActionIcon,{backgroundColor:"#087DF0"}]} onPress={shareSelectedVerse} accessibilityRole="button" accessibilityLabel="Share Text"><Text style={s.verseActionIconText}>⌯</Text></Pressable>
+      </View>
+      <View style={s.verseActionRow}>
+        <Pressable style={[s.verseActionLabel,{backgroundColor:"#743A2D"}]} onPress={toggleVerseBookmark}><Text style={s.verseActionLabelText}>Bookmark</Text></Pressable>
+        <Pressable style={[s.verseActionIcon,{backgroundColor:"#743A2D"}]} onPress={toggleVerseBookmark} accessibilityRole="button" accessibilityLabel="Bookmark"><Text style={s.verseActionIconText}>▮</Text></Pressable>
+      </View>
+      <View style={s.verseActionRow}>
+        <Pressable style={[s.verseActionLabel,{backgroundColor:"#E74742"}]} onPress={copySelectedVerse}><Text style={s.verseActionLabelText}>Copy</Text></Pressable>
+        <Pressable style={[s.verseActionIcon,{backgroundColor:"#E74742"}]} onPress={copySelectedVerse} accessibilityRole="button" accessibilityLabel="Copy"><Text style={s.verseActionIconText}>▢</Text></Pressable>
+      </View>
+      <View style={s.verseActionRow}>
+        <Pressable style={[s.verseActionLabel,{backgroundColor:"#E74799"}]} onPress={openVerseNote}><Text style={s.verseActionLabelText}>Notes</Text></Pressable>
+        <Pressable style={[s.verseActionIcon,{backgroundColor:"#E74799"}]} onPress={openVerseNote} accessibilityRole="button" accessibilityLabel="Notes"><Text style={s.verseActionIconText}>✎</Text></Pressable>
+      </View>
+      <View style={s.verseActionRow}>
+        <Pressable style={[s.verseActionLabel,{backgroundColor:"#168DE0"}]} onPress={toggleSelectedVerseHighlight}><Text style={s.verseActionLabelText}>{verseHighlights[activeVerseKey]?"Remove Highlight":"Highlight"}</Text></Pressable>
+        <Pressable style={[s.verseActionIcon,{backgroundColor:"#168DE0"}]} onPress={toggleSelectedVerseHighlight} accessibilityRole="button" accessibilityLabel="Highlight"><Text style={s.verseActionIconText}>▤</Text></Pressable>
+      </View>
+      <View style={s.verseActionRow}>
+        <Pressable style={[s.verseActionLabel,{backgroundColor:"#56235A"}]} onPress={()=>{setVerseMenuVisible(false);toggleBookmark();}}><Text style={s.verseActionLabelText}>Bookmark Chapter</Text></Pressable>
+        <Pressable style={[s.verseActionIcon,{backgroundColor:"#56235A"}]} onPress={()=>{setVerseMenuVisible(false);toggleBookmark();}} accessibilityRole="button" accessibilityLabel="Bookmark Chapter"><Text style={s.verseActionIconText}>▮</Text></Pressable>
+      </View>
+      <View style={s.verseActionRow}>
+        <Pressable style={[s.verseActionLabel,{backgroundColor:"#48A95B"}]} onPress={playSelectedVerse}><Text style={s.verseActionLabelText}>Audio Bible</Text></Pressable>
+        <Pressable style={[s.verseActionIcon,{backgroundColor:"#48A95B"}]} onPress={playSelectedVerse} accessibilityRole="button" accessibilityLabel="Audio Bible"><Text style={s.verseActionIconText}>↻</Text></Pressable>
+      </View>
+    </View>}
 
     <Modal visible={imageShareVisible} transparent animationType="fade" onRequestClose={()=>setImageShareVisible(false)}>
       <View style={s.imageShareBackdrop}>
@@ -1052,20 +1067,16 @@ planConfirmText:{fontSize:10.5,color:"#6F3B2C",textAlign:"center",lineHeight:17}
 planConfirmActions:{flexDirection:"row",justifyContent:"center",gap:22,marginTop:8},
 planBottomWave:{marginTop:0,marginBottom:-1},
 
- verseSelected:{backgroundColor:"#E3F1FF",borderRadius:10,borderLeftWidth:4,borderLeftColor:"#087DF0"},
- actionScrim:{flex:1,backgroundColor:"rgba(9,20,32,0.55)",justifyContent:"center",alignItems:"center",padding:16},
- actionSheet:{backgroundColor:"#FFFFFF",borderRadius:22,paddingHorizontal:16,paddingTop:12,paddingBottom:18,width:"100%",maxWidth:430,alignSelf:"center",maxHeight:"90%",overflow:"hidden",shadowColor:"#102A22",shadowOpacity:.2,shadowRadius:18,shadowOffset:{width:0,height:7},elevation:12},
- actionSheetHandle:{width:42,height:5,borderRadius:4,backgroundColor:"#CBD5E1",alignSelf:"center",marginBottom:14},
- actionSheetHeader:{flexDirection:"row",alignItems:"flex-start",gap:12,marginBottom:14},
- actionSheetTitle:{fontSize:17,fontWeight:"900",color:"#172B3A"},
- actionSheetSubtitle:{fontSize:13,lineHeight:19,color:"#526477",marginTop:5},
- actionGrid:{flexDirection:"row",flexWrap:"wrap",gap:9,justifyContent:"space-between",alignItems:"stretch"},
- actionTile:{width:"31.5%",minHeight:82,borderRadius:13,alignItems:"center",justifyContent:"center",paddingHorizontal:5,paddingVertical:9},
- actionTileIcon:{fontSize:23,color:"#FFFFFF",fontWeight:"900"},
- actionTileText:{fontSize:11.5,lineHeight:15,color:"#FFFFFF",fontWeight:"800",textAlign:"center",marginTop:5},
- highlightSwatches:{flexDirection:"row",gap:5,marginTop:7},
- highlightSwatch:{width:17,height:17,borderRadius:9,borderWidth:1,borderColor:"rgba(255,255,255,.9)"},
- actionFootnote:{fontSize:10,color:"#64748B",textAlign:"center",lineHeight:15,marginTop:13},
+ verseSelected:{backgroundColor:"transparent",borderRadius:0,borderLeftWidth:0},
+ verseSelectedText:{color:"#F07B21",textDecorationLine:"underline"},
+ verseActionOverlay:{position:"absolute",right:5,top:"30%",alignItems:"flex-end",zIndex:100,elevation:30,width:"auto",maxWidth:"72%"},
+ verseActionClose:{width:25,height:25,borderRadius:13,backgroundColor:"rgba(255,255,255,0.96)",borderWidth:1,borderColor:"#D5DEE8",alignItems:"center",justifyContent:"center",marginBottom:3,marginRight:7,shadowColor:"#0F172A",shadowOpacity:.18,shadowRadius:4,shadowOffset:{width:0,height:1},elevation:3},
+ verseActionCloseText:{fontSize:19,color:"#334155",fontWeight:"700",lineHeight:21},
+ verseActionRow:{flexDirection:"row",alignItems:"center",justifyContent:"flex-end",height:42,marginBottom:5},
+ verseActionLabel:{minHeight:30,maxWidth:170,paddingHorizontal:8,paddingVertical:5,borderRadius:8,justifyContent:"center",alignItems:"center",marginRight:6,shadowColor:"#0F172A",shadowOpacity:.18,shadowRadius:4,shadowOffset:{width:0,height:1},elevation:3},
+ verseActionLabelText:{fontSize:11.5,lineHeight:16,color:"#FFFFFF",fontWeight:"800",textAlign:"center"},
+ verseActionIcon:{width:42,height:42,borderRadius:22,alignItems:"center",justifyContent:"center",borderWidth:1.5,borderColor:"rgba(255,255,255,0.92)",shadowColor:"#0F172A",shadowOpacity:.22,shadowRadius:5,shadowOffset:{width:0,height:2},elevation:5},
+ verseActionIconText:{fontSize:21,color:"#FFFFFF",fontWeight:"900",textAlign:"center"},
  imageShareBackdrop:{flex:1,backgroundColor:"rgba(9,20,32,0.55)",justifyContent:"center",alignItems:"center",padding:18},
  imageSharePanel:{width:"100%",maxWidth:420,alignSelf:"center",backgroundColor:"#FFFFFF",borderRadius:20,padding:18},
  shareVerseCard:{backgroundColor:"#F3F8F4",borderRadius:16,borderWidth:1,borderColor:"#C9DED0",padding:24,minHeight:210,justifyContent:"center"},
