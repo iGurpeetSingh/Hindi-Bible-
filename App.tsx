@@ -38,7 +38,9 @@ function verseItems(content:string) {
 export default function App() {
   const [tab,setTab]=useState<Tab>("home");
   const [bibleId,setBibleId]=useState("");
-  const [versions,setVersions]=useState<ApiBible[]>([]);\n  const [translationLoading,setTranslationLoading]=useState(true);\n  const [audioAvailability,setAudioAvailability]=useState<"idle"|"checking"|"available"|"unavailable"|"error">("idle");\n  const [audioAvailabilityMessage,setAudioAvailabilityMessage]=useState("");
+  const [versions,setVersions]=useState<ApiBible[]>([]);
+  const [translationLoading,setTranslationLoading]=useState(true);\n  const [audioAvailability,setAudioAvailability]=useState<"idle"|"checking"|"available"|"unavailable"|"error">("idle");
+  const [audioAvailabilityMessage,setAudioAvailabilityMessage]=useState("");
   const [catalog,setCatalog]=useState<ApiIndexBook[]>([]);
   const [book,setBook]=useState<BibleBook>(BOOKS[0]);
   const [chapter,setChapter]=useState(1);
