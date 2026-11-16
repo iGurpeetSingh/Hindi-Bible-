@@ -1,4 +1,5 @@
 import React, { useEffect, useMemo, useState } from "react";
+import Svg, { Circle, Line, Path, Rect } from "react-native-svg";
 import {
   ActivityIndicator, Alert, Modal, Platform, Pressable, SafeAreaView,
   ScrollView, StatusBar, StyleSheet, Text, TextInput, View, Linking, Image
@@ -15,6 +16,19 @@ type Tab = "home" | "bible" | "audio" | "search" | "saved" | "settings";
 type Passage = { id:string; content:string; reference:string; copyright?:string };
 type PickerTab = "BOOK" | "CHAPTER" | "VERSE";
 const C = { bg:"#F4F7FB", blue:"#0879E8", blueDark:"#075CB5", pale:"#D9EBFF", ink:"#172536", muted:"#66778B", line:"#D7E1EC", white:"#FFFFFF", gold:"#D6A64D", green:"#0E6256", red:"#A33D42" };
+
+type HomeIconName = "audio" | "search" | "bookmark" | "plan" | "notes" | "study";
+function HomeFeatureIcon({name,color="#FFFFFF"}:{name:HomeIconName;color?:string}) {
+  const common={stroke:color,strokeWidth:3.2,strokeLinecap:"round" as const,strokeLinejoin:"round" as const,fill:"none"};
+  return <Svg width={36} height={36} viewBox="0 0 64 64">
+    {name==="audio"&&<><Path d="M13 34v-4a19 19 0 0 1 38 0v4" {...common}/><Rect x="10" y="33" width="12" height="19" rx="5" {...common}/><Rect x="42" y="33" width="12" height="19" rx="5" {...common}/><Path d="M22 48h7m6 0h7" {...common}/></>}
+    {name==="search"&&<><Circle cx="27" cy="27" r="15" {...common}/><Path d="m38 38 15 15" {...common}/></>}
+    {name==="bookmark"&&<Path d="M19 10h26v44L32 45 19 54z" {...common}/>}
+    {name==="plan"&&<><Rect x="11" y="14" width="42" height="39" rx="5" {...common}/><Line x1="11" y1="26" x2="53" y2="26" {...common}/><Line x1="22" y1="9" x2="22" y2="19" {...common}/><Line x1="42" y1="9" x2="42" y2="19" {...common}/><Path d="M29 35h5v11m-5 0h11" {...common}/></>}
+    {name==="notes"&&<><Rect x="10" y="9" width="37" height="46" rx="4" {...common}/><Path d="M18 21h21M18 30h18M18 39h13" {...common}/><Path d="m37 43 14-14 5 5-14 14-7 2z" {...common}/></>}
+    {name==="study"&&<><Path d="M10 12h44v32H30L17 55V44h-7z" {...common}/><Circle cx="23" cy="28" r="2.5" fill={color} stroke="none"/><Circle cx="32" cy="28" r="2.5" fill={color} stroke="none"/><Circle cx="41" cy="28" r="2.5" fill={color} stroke="none"/></>}
+  </Svg>;
+}
 
 function Button({label,onPress,outline=false,disabled=false}:{label:string;onPress:()=>void;outline?:boolean;disabled?:boolean}) {
   return <Pressable disabled={disabled} onPress={onPress} style={[s.button,outline&&s.buttonOutline,disabled&&{opacity:.45}]}><Text style={[s.buttonText,outline&&{color:C.blue}]}>{label}</Text></Pressable>;
@@ -360,16 +374,16 @@ export default function App() {
 
           <View style={s.featureGrid}>
             {[
-              {icon:"🎧",label:"ऑडियो बाइबल",description:"वचन को सुनें",action:"audio",accent:"#20E5A4",halo:"#073F35"},
-              {icon:"🔍",label:"वचन खोजें",description:"किसी भी वचन को खोजें",action:"search",accent:"#42D8F5",halo:"#102F4D"},
-              {icon:"⭐",label:"बुकमार्क",description:"पसंदीदा वचन सहेजें",action:"saved",accent:"#F4C95D",halo:"#4A3A13"},
-              {icon:"🗓️",label:"पढ़ने की योजना",description:"नियमित बाइबल अध्ययन",action:"soon",accent:"#C68BFF",halo:"#392052"},
-              {icon:"📝",label:"नोट्स",description:"अपने विचार लिखें",action:"soon",accent:"#F5B64D",halo:"#4A3216"},
-              {icon:"💬",label:"बाइबल अध्ययन",description:"गहराई से समझें",action:"soon",accent:"#41D8F3",halo:"#123B50"}
+              {icon:"audio",label:"ऑडियो बाइबल",description:"वचन को सुनें",action:"audio",accent:"#20E5A4",halo:"#073F35"},
+              {icon:"search",label:"वचन खोजें",description:"किसी भी वचन को खोजें",action:"search",accent:"#42D8F5",halo:"#102F4D"},
+              {icon:"bookmark",label:"बुकमार्क",description:"पसंदीदा वचन सहेजें",action:"saved",accent:"#F4C95D",halo:"#4A3A13"},
+              {icon:"plan",label:"पढ़ने की योजना",description:"नियमित बाइबल अध्ययन",action:"soon",accent:"#C68BFF",halo:"#392052"},
+              {icon:"notes",label:"नोट्स",description:"अपने विचार लिखें",action:"soon",accent:"#F5B64D",halo:"#4A3216"},
+              {icon:"study",label:"बाइबल अध्ययन",description:"गहराई से समझें",action:"soon",accent:"#41D8F3",halo:"#123B50"}
             ].map(item=>{
               const cardContent=<>
                 <View style={[s.featureIconHalo,{borderColor:item.accent,backgroundColor:item.halo,shadowColor:item.accent}]}>
-                  <Text style={s.featureIcon}>{item.icon}</Text>
+                  <HomeFeatureIcon name={item.icon} color="#FFFFFF"/>
                 </View>
                 <Text style={s.featureLabel}>{item.label}</Text>
                 <Text style={s.featureSub}>{item.description}</Text>
@@ -545,9 +559,9 @@ const s=StyleSheet.create({
  audioPanel:{backgroundColor:C.white,borderRadius:18,padding:16,borderWidth:1,borderColor:C.line,marginTop:14},audioTitle:{fontSize:22,fontWeight:"900",color:C.ink,marginTop:8},audioLabel:{fontSize:13,fontWeight:"800",color:C.ink,marginTop:18,marginBottom:8},readerChoices:{flexDirection:"row",flexWrap:"wrap",gap:8},readerChoice:{paddingHorizontal:13,paddingVertical:9,borderRadius:20,borderWidth:1,borderColor:C.line,backgroundColor:"#F4F7FB"},readerChoiceActive:{backgroundColor:C.blue,borderColor:C.blue},readerChoiceText:{fontSize:12,color:C.ink,fontWeight:"800"},audioProgressRow:{flexDirection:"row",justifyContent:"space-between",marginTop:18},audioProgress:{height:7,backgroundColor:"#E1E8F0",borderRadius:8,overflow:"hidden",marginTop:5},audioProgressFill:{height:7,backgroundColor:C.blue,borderRadius:8},audioControls:{flexDirection:"row",alignItems:"center",justifyContent:"space-between",marginTop:18,marginBottom:10},audioControl:{minWidth:38,height:42,alignItems:"center",justifyContent:"center"},audioControlText:{fontSize:13,fontWeight:"800",color:C.ink},audioPlay:{width:58,height:58,borderRadius:29,backgroundColor:C.blue,alignItems:"center",justifyContent:"center"},audioPlayText:{fontSize:25,color:C.white,fontWeight:"900"},audioHint:{fontSize:11,color:C.muted,lineHeight:18,marginTop:12},
  safe:{flex:1,height:Platform.OS==="web"?"100vh":undefined,minHeight:Platform.OS==="web"?"100vh":undefined,width:"100%",maxWidth:480,alignSelf:"center",overflow:"hidden",backgroundColor:C.bg,paddingTop:Platform.OS==="android"?(StatusBar.currentHeight||24):0},body:{flex:1,minHeight:0,width:"100%"},content:{flexGrow:1,padding:17,paddingBottom:28},homePage:{marginHorizontal:-17,marginTop:-17,paddingHorizontal:16,paddingTop:16,paddingBottom:28,backgroundColor:"#002D28"},
 homeHeader:{height:166,width:"100%",alignSelf:"stretch",borderRadius:22,overflow:"hidden",marginBottom:14,backgroundColor:"#003A34",justifyContent:"center",borderWidth:1,borderColor:"#147B68"},
-homeHeaderPhoto:{position:"absolute",top:0,right:0,bottom:0,width:"76%",height:"100%"},
-homeHeaderShade:{position:"absolute",top:0,right:0,bottom:0,left:0,backgroundColor:"rgba(0,31,27,0.18)"},
-homeHeaderContent:{paddingHorizontal:17,paddingVertical:15,width:"100%"},
+homeHeaderPhoto:{position:"absolute",top:0,right:0,bottom:0,left:0,width:"100%",height:"100%"},
+homeHeaderShade:{position:"absolute",top:0,right:0,bottom:0,left:0,backgroundColor:"rgba(0,24,22,0.28)"},
+homeHeaderContent:{paddingHorizontal:17,paddingVertical:15,width:"100%",position:"relative",zIndex:2},
 homeHeaderTop:{flexDirection:"row",alignItems:"center",justifyContent:"space-between"},
 homeBrandLine:{flexDirection:"row",alignItems:"center",gap:8},
 homeBookMark:{fontSize:29},
