@@ -287,6 +287,15 @@ export default function App() {
     setVerseMenuVisible(false);
   }
 
+  async function clearVerseHighlight() {
+    if(selectedVerse===null)return;
+    const next={...verseHighlights};
+    delete next[activeVerseKey];
+    setVerseHighlights(next);
+    await storage.setHighlights(next);
+    setVerseMenuVisible(false);
+  }
+
   async function playSelectedVerse() {
     if(selectedVerse===null)return;
     const index=verseList.findIndex(item=>item.number===selectedVerse);
@@ -595,7 +604,7 @@ export default function App() {
         {!!error&&<Text style={s.error}>{error}</Text>}
         {!passage&&!loading&&!error&&<View style={s.emptyBox}><Text style={s.emptyTitle}>बाइबल पढ़ना शुरू करें</Text><Text style={s.muted}>ऊपर से पुस्तक और अध्याय चुनें।</Text><Button label="पुस्तक चुनें" onPress={()=>openPicker("BOOK")}/></View>}
         {passage&&<View style={s.verseList}>
-          {verseList.map((v,i)=><Pressable key={v.number||i} onPress={()=>{setSelectedVerse(v.number||i+1);setVerseMenuVisible(true);}} onLongPress={()=>{setSelectedVerse(v.number||i+1);setVerseMenuVisible(true);}} delayLongPress={280} {...({onContextMenu:(event:any)=>{event.preventDefault?.();setSelectedVerse(v.number||i+1);setVerseMenuVisible(true);}} as any)} style={[s.verseRow,speaking&&speechVerse===i&&s.verseActive,selectedVerse===(v.number||i+1)&&s.verseSelected,verseHighlights[`${book.id}.${chapter}.${v.number||i+1}`]?{backgroundColor:verseHighlights[`${book.id}.${chapter}.${v.number||i+1}`]}:null]}>
+          {verseList.map((v,i)=><Pressable key={v.number||i} onPress={()=>setSelectedVerse(v.number||i+1)} onLongPress={()=>{setSelectedVerse(v.number||i+1);setVerseMenuVisible(true);}} delayLongPress={280} {...({onContextMenu:(event:any)=>{event.preventDefault?.();setSelectedVerse(v.number||i+1);setVerseMenuVisible(true);}} as any)} style={[s.verseRow,speaking&&speechVerse===i&&s.verseActive,selectedVerse===(v.number||i+1)&&s.verseSelected,verseHighlights[`${book.id}.${chapter}.${v.number||i+1}`]?{backgroundColor:verseHighlights[`${book.id}.${chapter}.${v.number||i+1}`]}:null]}>
             {v.number>0&&<Text style={s.verseNumber}>{v.number}</Text>}
             <Text style={[s.verseText,{fontSize:Math.min(fontSize,19),lineHeight:Math.min(fontSize,19)*1.55}]}>{v.text}</Text>
           </Pressable>)}
@@ -874,12 +883,13 @@ export default function App() {
               <Text style={s.actionTileIcon}>▤</Text><Text style={s.actionTileText}>Highlight</Text>
               <View style={s.highlightSwatches}>
                 {["#FFF1A8","#C8F0D2","#CDE7FF","#F7D2E8"].map(color=><Pressable key={color} onPress={()=>setVerseHighlight(color)} style={[s.highlightSwatch,{backgroundColor:color}]}/>)}
+                <Pressable onPress={clearVerseHighlight} style={[s.highlightSwatch,{backgroundColor:"#FFFFFF",alignItems:"center",justifyContent:"center"}]}><Text style={{fontSize:10,color:"#334155",fontWeight:"900"}}>×</Text></Pressable>
               </View>
             </View>
             <Pressable style={[s.actionTile,{backgroundColor:"#56235A"}]} onPress={()=>{setVerseMenuVisible(false);toggleBookmark();}}><Text style={s.actionTileIcon}>▰</Text><Text style={s.actionTileText}>Bookmark Chapter</Text></Pressable>
             <Pressable style={[s.actionTile,{backgroundColor:"#48A95B"}]} onPress={playSelectedVerse}><Text style={s.actionTileIcon}>▶</Text><Text style={s.actionTileText}>Audio Bible</Text></Pressable>
           </View>
-          <Text style={s.actionFootnote}>वचन पर टैप या Long Press करें। Desktop पर Right Click भी काम करता है।</Text>
+          <Text style={s.actionFootnote}>वचन चुनने के लिए Tap करें। Actions के लिए Long Press या Desktop पर Right Click करें।</Text>
         </Pressable>
       </Pressable>
     </Modal>
