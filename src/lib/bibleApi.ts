@@ -53,7 +53,9 @@ function isHindiLanguageName(value?: string): boolean {
   return normalized === "hindi"
     || normalized === "हिंदी"
     || normalized === "हिन्दी"
-    || /^hindi(?:\\s|\\(|-|$)/.test(normalized);
+    || normalized.startsWith("hindi ")
+    || normalized.startsWith("hindi(")
+    || normalized.startsWith("hindi-");
 }
 
 function isHindiTranslation(translation: ApiBible & { languageEnglishName?: string }): boolean {
