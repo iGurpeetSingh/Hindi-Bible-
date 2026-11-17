@@ -13,10 +13,10 @@ import { Directory, File, Paths } from "expo-file-system";
 import { getChapterAudio, ChapterAudio } from "./src/lib/audioApi";
 import { BOOKS, BibleBook } from "./src/data/books";
 import { ApiBible, ApiIndexBook, getBibleIndex, getHindiBibles, getPassage, searchVerses, searchBibleText } from "./src/lib/bibleApi";
-import { ReadingPlanProgress, SavedReference, storage } from "./src/lib/storage";
+import { BibleNote, BibleNoteKind, NoteReference, ReadingPlanProgress, SavedReference, storage } from "./src/lib/storage";
 import { buildReadingPlanSchedule, getLocalDateKey, getPlanDayNumber, getReadingPlanTemplate, READING_PLAN_TEMPLATES, ReadingPlanChapter, shiftDateKey } from "./src/data/readingPlans";
 
-type Tab = "home" | "bible" | "audio" | "search" | "saved" | "settings" | "plan";
+type Tab = "home" | "bible" | "audio" | "search" | "saved" | "settings" | "plan" | "notes";
 type Passage = { id:string; content:string; reference:string; copyright?:string };
 type PickerTab = "BOOK" | "CHAPTER" | "VERSE";
 const C = { bg:"#F0F7F2", blue:"#087A5C", blueDark:"#065B46", pale:"#E1F1E7", ink:"#18372E", muted:"#61776C", line:"#CEE0D5", white:"#FAFDFA", gold:"#D6A64D", green:"#0E6256", red:"#A33D42" };
@@ -79,6 +79,15 @@ export default function App() {
   const verseCardRef=useRef<View>(null);
   const [noteModalVisible,setNoteModalVisible]=useState(false);
   const [noteDraft,setNoteDraft]=useState("");
+  const [noteTitleDraft,setNoteTitleDraft]=useState("");
+  const [noteTagsDraft,setNoteTagsDraft]=useState("");
+  const [noteKindDraft,setNoteKindDraft]=useState<BibleNoteKind>("personal");
+  const [noteReferenceDraft,setNoteReferenceDraft]=useState<NoteReference|null>(null);
+  const [editingNoteId,setEditingNoteId]=useState<string|null>(null);
+  const [notes,setNotes]=useState<BibleNote[]>([]);
+  const [noteQuery,setNoteQuery]=useState("");
+  const [noteFilter,setNoteFilter]=useState("सभी");
+  const [noteDeleteConfirmId,setNoteDeleteConfirmId]=useState<string|null>(null);
   const [verseNotes,setVerseNotes]=useState<Record<string,string>>({});
   const [verseHighlights,setVerseHighlights]=useState<Record<string,string>>({});
   const [fontSize,setFontSize]=useState(16);
@@ -108,8 +117,20 @@ export default function App() {
 
   useEffect(()=>{
     (async()=>{
-      const [id,bm,hist,fz,savedPlan,savedNotes,savedHighlights]=await Promise.all([storage.getBibleId(),storage.getBookmarks(),storage.getHistory(),storage.getFontSize(),storage.getReadingPlan(),storage.getNotes(),storage.getHighlights()]);
-      setBookmarks(bm);setHistory(hist);setPlanProgress(savedPlan);setVerseNotes(savedNotes);setVerseHighlights(savedHighlights);setFontSize(18); if(fz!==18) await storage.setFontSize(18);
+      const [id,bm,hist,fz,savedPlan,savedNotes,savedHighlights,savedNoteLibrary]=await Promise.all([storage.getBibleId(),storage.getBookmarks(),storage.getHistory(),storage.getFontSize(),storage.getReadingPlan(),storage.getNotes(),storage.getHighlights(),storage.getNoteLibrary()]);
+      const migratedLegacyNotes:BibleNote[]=Object.entries(savedNotes).flatMap(([key,content])=>{
+        const [bookId,chapterValue,verseValue]=key.split(".");
+        const target=BOOKS.find(item=>item.id===bookId);
+        const chapterNumber=Number(chapterValue),verseNumber=Number(verseValue);
+        if(!target||!chapterNumber||!verseNumber||!content?.trim())return [];
+        const reference:NoteReference={bookId:target.id,bookHindi:target.hindi,bookEnglish:target.english,chapter:chapterNumber,verse:verseNumber};
+        return [{id:`legacy:${key}`,title:`${target.hindi} ${chapterNumber}:${verseNumber}`,content,kind:"verse" as const,tags:["वचन"],reference,createdAt:Date.now(),updatedAt:Date.now()}];
+      });
+      const currentNoteKeys=new Set(savedNoteLibrary.filter(item=>item.reference?.verse).map(item=>`${item.reference!.bookId}.${item.reference!.chapter}.${item.reference!.verse}`));
+      const newLegacyNotes=migratedLegacyNotes.filter(item=>!currentNoteKeys.has(`${item.reference!.bookId}.${item.reference!.chapter}.${item.reference!.verse}`));
+      const mergedNotes=[...savedNoteLibrary,...newLegacyNotes];
+      setBookmarks(bm);setHistory(hist);setPlanProgress(savedPlan);setVerseNotes(savedNotes);setVerseHighlights(savedHighlights);setNotes(mergedNotes);setFontSize(18); if(fz!==18) await storage.setFontSize(18);
+      if(newLegacyNotes.length) await storage.setNoteLibrary(mergedNotes);
       try {
         const available=await getHindiBibles();
         setVersions(available);
@@ -153,6 +174,23 @@ export default function App() {
   const planProgressPercent=planTotalChapters?Math.round(planCompletedCount/planTotalChapters*100):0;
   const displayedDayComplete=!!displayedPlanDay&&displayedPlanDay.chapters.length>0&&displayedPlanDay.chapters.every(item=>planCompletedSet.has(item.id));
   const selectedPlanTemplate=READING_PLAN_TEMPLATES.find(item=>item.id===planSelectedId)||READING_PLAN_TEMPLATES[0];
+  const noteFilterOptions=["सभी","व्यक्तिगत","वचन नोट्स","बाइबल अध्ययन"];
+  const filteredNotes=useMemo(()=>{
+    const term=noteQuery.trim().toLocaleLowerCase("hi");
+    return notes.filter(item=>{
+      const category=item.kind==="personal"?"व्यक्तिगत":item.kind==="verse"?"वचन नोट्स":"बाइबल अध्ययन";
+      if(noteFilter!=="सभी"&&category!==noteFilter)return false;
+      if(!term)return true;
+      const reference=item.reference?`${item.reference.bookHindi} ${item.reference.bookEnglish} ${item.reference.chapter} ${item.reference.verse||""}`:"";
+      return [item.title,item.content,item.tags.join(" "),reference].join(" ").toLocaleLowerCase("hi").includes(term);
+    }).sort((a,b)=>b.updatedAt-a.updatedAt);
+  },[notes,noteQuery,noteFilter]);
+  const noteCategoryCounts=useMemo(()=>({
+    "सभी":notes.length,
+    "व्यक्तिगत":notes.filter(item=>item.kind==="personal").length,
+    "वचन नोट्स":notes.filter(item=>item.kind==="verse").length,
+    "बाइबल अध्ययन":notes.filter(item=>item.kind==="study").length
+  }),[notes]);
 
   async function openChapter(nextBook:BibleBook,nextChapter:number) {
     setBook(nextBook);setChapter(nextChapter);setTab("bible");setDrawer(false);setPicker(false);setPassage(null);setSelectedVerse(null);setVerseMenuVisible(false);setError("");
@@ -272,22 +310,96 @@ export default function App() {
     Alert.alert(exists?"वचन Bookmark हटाया":"वचन Bookmark सेव हुआ",exists?"यह वचन सेव सूची से हटा दिया गया।":"यह वचन आपकी सेव सूची में सुरक्षित है।");
   }
 
-  function openVerseNote() {
-    if(selectedVerse===null)return;
-    setNoteDraft(verseNotes[activeVerseKey]||"");
-    setVerseMenuVisible(false);
-    setNoteModalVisible(true);
+  function referenceLabel(reference?:NoteReference|null) {
+    if(!reference)return "";
+    return `${reference.bookHindi} ${reference.chapter}${reference.verse?":"+reference.verse:""}`;
   }
 
-  async function saveVerseNote() {
+  function openNewNote(kind:BibleNoteKind="personal") {
+    setEditingNoteId(null);setNoteTitleDraft("");setNoteDraft("");setNoteTagsDraft("");
+    setNoteKindDraft(kind);setNoteReferenceDraft(null);setNoteModalVisible(true);
+  }
+
+  function openEditNote(item:BibleNote) {
+    setEditingNoteId(item.id);setNoteTitleDraft(item.title);setNoteDraft(item.content);
+    setNoteTagsDraft(item.tags.join(", "));setNoteKindDraft(item.kind);
+    setNoteReferenceDraft(item.reference||null);setNoteModalVisible(true);
+  }
+
+  function addCurrentChapterReference() {
+    setNoteReferenceDraft({bookId:book.id,bookHindi:book.hindi,bookEnglish:book.english,chapter,verse:tab==="bible"?selectedVerse||undefined:undefined});
+  }
+
+  function openVerseNote() {
     if(selectedVerse===null)return;
-    const next={...verseNotes};
-    if(noteDraft.trim()) next[activeVerseKey]=noteDraft.trim();
-    else delete next[activeVerseKey];
-    setVerseNotes(next);
-    await storage.setNotes(next);
-    setNoteModalVisible(false);
-    Alert.alert("नोट सेव हुआ",noteDraft.trim()?"आपका नोट इस वचन के साथ सेव कर दिया गया।":"खाली नोट हटा दिया गया।");
+    const existing=notes.find(item=>item.reference?.bookId===book.id&&item.reference.chapter===chapter&&item.reference.verse===selectedVerse);
+    setEditingNoteId(existing?.id||null);
+    setNoteTitleDraft(existing?.title||activeVerseReference);
+    setNoteDraft(existing?.content||verseNotes[activeVerseKey]||"");
+    setNoteTagsDraft(existing?.tags.join(", ")||"वचन");
+    setNoteKindDraft("verse");
+    setNoteReferenceDraft({bookId:book.id,bookHindi:book.hindi,bookEnglish:book.english,chapter,verse:selectedVerse});
+    setVerseMenuVisible(false);setNoteModalVisible(true);
+  }
+
+  async function saveNote() {
+    const content=noteDraft.trim();
+    if(!content){Alert.alert("नोट खाली है","सेव करने से पहले अपना विचार लिखें।");return;}
+    const now=Date.now();
+    const previous=editingNoteId?notes.find(item=>item.id===editingNoteId):noteKindDraft==="verse"&&noteReferenceDraft?.verse?notes.find(item=>item.reference?.bookId===noteReferenceDraft.bookId&&item.reference.chapter===noteReferenceDraft.chapter&&item.reference.verse===noteReferenceDraft.verse):undefined;
+    const id=editingNoteId||previous?.id||`note-${now}`;
+    const tags=noteTagsDraft.split(",").map(item=>item.trim()).filter(Boolean).filter((item,index,array)=>array.indexOf(item)===index);
+    const entry:BibleNote={
+      id,
+      title:noteTitleDraft.trim()||referenceLabel(noteReferenceDraft)||"बिना शीर्षक नोट",
+      content,
+      kind:noteKindDraft,
+      tags,
+      reference:noteReferenceDraft||undefined,
+      createdAt:previous?.createdAt||now,
+      updatedAt:now
+    };
+    const updated=previous?notes.map(item=>item.id===previous.id?entry:item):[entry,...notes];
+    setNotes(updated);
+    await storage.setNoteLibrary(updated);
+
+    const legacyNext={...verseNotes};
+    const oldReference=previous?.kind==="verse"?previous.reference:undefined;
+    if(oldReference?.verse&&(noteKindDraft!=="verse"||oldReference.bookId!==noteReferenceDraft?.bookId||oldReference.chapter!==noteReferenceDraft?.chapter||oldReference.verse!==noteReferenceDraft?.verse)){
+      delete legacyNext[`${oldReference.bookId}.${oldReference.chapter}.${oldReference.verse}`];
+    }
+    if(noteKindDraft==="verse"&&noteReferenceDraft?.verse){
+      legacyNext[`${noteReferenceDraft.bookId}.${noteReferenceDraft.chapter}.${noteReferenceDraft.verse}`]=content;
+    }
+    if(JSON.stringify(legacyNext)!==JSON.stringify(verseNotes)){
+      setVerseNotes(legacyNext);await storage.setNotes(legacyNext);
+    }
+    setNoteModalVisible(false);setEditingNoteId(null);
+    Alert.alert("नोट सेव हुआ",`“${entry.title}” आपके Notes Library में सुरक्षित है।`);
+  }
+
+  async function deleteNote(item:BibleNote) {
+    const updated=notes.filter(note=>note.id!==item.id);
+    setNotes(updated);await storage.setNoteLibrary(updated);
+    if(item.kind==="verse"&&item.reference?.verse){
+      const legacyNext={...verseNotes};
+      delete legacyNext[`${item.reference.bookId}.${item.reference.chapter}.${item.reference.verse}`];
+      setVerseNotes(legacyNext);await storage.setNotes(legacyNext);
+    }
+    setNoteDeleteConfirmId(null);
+  }
+
+  async function shareNote(item:BibleNote) {
+    const tags=item.tags.length?`\n\nTags: ${item.tags.join(", ")}`:"";
+    const reference=item.reference?(`\n\nBible Reference: ${referenceLabel(item.reference)}`):"";
+    try { await Share.share({message:`${item.title}\n\n${item.content}${reference}${tags}\n\n— Hindi Bible`}); }
+    catch { Alert.alert("Share नहीं हुआ","नोट शेयर करते समय समस्या आई।"); }
+  }
+
+  function openNoteReference(item:BibleNote) {
+    if(!item.reference)return;
+    const target=BOOKS.find(entry=>entry.id===item.reference?.bookId);
+    if(target)openChapter(target,item.reference.chapter);
   }
 
   async function setVerseHighlight(color:string) {
@@ -565,7 +677,7 @@ export default function App() {
               {icon:"search",label:"वचन खोजें",description:"किसी भी वचन को खोजें",action:"search",accent:"#42D8F5",halo:"#102F4D"},
               {icon:"bookmark",label:"बुकमार्क",description:"पसंदीदा वचन सहेजें",action:"saved",accent:"#F4C95D",halo:"#4A3A13"},
               {icon:"plan",label:"पढ़ने की योजना",description:"अपनी दैनिक पढ़ाई पूरी करें",action:"plan",accent:"#C68BFF",halo:"#392052"},
-              {icon:"notes",label:"नोट्स",description:"अपने विचार लिखें",action:"soon",accent:"#F5B64D",halo:"#4A3216"},
+              {icon:"notes",label:"नोट्स",description:"अपने विचार लिखें",action:"notes",accent:"#F5B64D",halo:"#4A3216"},
               {icon:"study",label:"बाइबल अध्ययन",description:"गहराई से समझें",action:"soon",accent:"#41D8F3",halo:"#123B50"}
             ].map(item=>{
               const cardContent=<>
@@ -583,6 +695,7 @@ export default function App() {
               if(item.action==="search") return <Pressable key={item.label} style={[s.featureCard,{borderColor:"#42D8F5",backgroundColor:"#043B33"}]} onPress={()=>changeTab("search")} accessibilityRole="button">{cardContent}</Pressable>;
               if(item.action==="saved") return <Pressable key={item.label} style={[s.featureCard,{borderColor:"#F4C95D",backgroundColor:"#043B33"}]} onPress={()=>changeTab("saved")} accessibilityRole="button">{cardContent}</Pressable>;
               if(item.action==="plan") return <Pressable key={item.label} style={[s.featureCard,{borderColor:item.accent,backgroundColor:"#043B33"}]} onPress={()=>changeTab("plan")} accessibilityRole="button">{cardContent}</Pressable>;
+              if(item.action==="notes") return <Pressable key={item.label} style={[s.featureCard,{borderColor:item.accent,backgroundColor:"#043B33"}]} onPress={()=>changeTab("notes")} accessibilityRole="button">{cardContent}</Pressable>;
               return <View key={item.label} style={[s.featureCard,{borderColor:item.accent,backgroundColor:"#043B33"}]}>{cardContent}</View>;
             })}
           </View>
@@ -824,6 +937,83 @@ export default function App() {
         {history.map(x=><Pressable key={x.id} style={s.savedRow} onPress={()=>openChapter(BOOKS.find(b=>b.id===x.bookId)||BOOKS[0],x.chapter)}><Text style={s.cardTitle}>{x.reference}</Text><Text style={s.muted}>फिर से पढ़ें →</Text></Pressable>)}
       </>}
 
+      {tab==="notes"&&<>
+        <View style={s.innerHomeBar}>
+          <Pressable onPress={()=>changeTab("home")} style={s.innerHomeButton} accessibilityRole="button" accessibilityLabel="होम पेज पर वापस जाएँ">
+            <Text style={s.innerHomeIcon}>⌂</Text><Text style={s.innerHomeText}>होम पर जाएँ</Text>
+          </Pressable>
+          <Text style={s.innerPageTag}>MY BIBLE NOTES</Text>
+        </View>
+        <Text style={s.pageHeading}>मेरे नोट्स</Text>
+        <Text style={s.muted}>अपने विचार, वचन से जुड़े नोट्स और बाइबल अध्ययन एक जगह सुरक्षित रखें। सभी नोट इस डिवाइस में सेव होते हैं।</Text>
+
+        <View style={s.notesHeroCard}>
+          <View style={s.notesHeroTop}>
+            <View style={{flex:1}}>
+              <Text style={s.notesHeroEyebrow}>YOUR NOTES LIBRARY</Text>
+              <Text style={s.notesHeroTitle}>{notes.length} सेव किए गए नोट्स</Text>
+              <Text style={s.notesHeroCaption}>व्यक्तिगत विचार • वचन • अध्ययन</Text>
+            </View>
+            <View style={s.notesHeroIcon}><HomeFeatureIcon name="notes" color="#F5C65B"/></View>
+          </View>
+          <View style={s.notesHeroActions}>
+            <Pressable style={s.notesPrimaryButton} onPress={()=>openNewNote("personal")}><Text style={s.notesPrimaryButtonText}>＋ नया नोट</Text></Pressable>
+            <Pressable style={s.notesSecondaryButton} onPress={()=>openNewNote("study")}><Text style={s.notesSecondaryButtonText}>＋ Bible Study</Text></Pressable>
+          </View>
+        </View>
+
+        <TextInput value={noteQuery} onChangeText={setNoteQuery} placeholder="नोट का शीर्षक, वचन या शब्द खोजें…" placeholderTextColor={C.muted} style={s.notesSearch}/>
+        <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={s.notesFilters}>
+          {noteFilterOptions.map(item=><Pressable key={item} onPress={()=>setNoteFilter(item)} style={[s.notesFilterChip,noteFilter===item&&s.notesFilterChipActive]}>
+            <Text style={[s.notesFilterText,noteFilter===item&&s.notesFilterTextActive]}>{item} ({noteCategoryCounts[item as keyof typeof noteCategoryCounts]})</Text>
+          </Pressable>)}
+        </ScrollView>
+
+        <View style={s.notesListHeading}>
+          <Text style={s.sectionTitle}>आपके नोट्स</Text>
+          <Text style={s.notesResultCount}>{filteredNotes.length} परिणाम</Text>
+        </View>
+        {filteredNotes.length===0?<View style={s.notesEmpty}>
+          <View style={s.notesEmptyIcon}><HomeFeatureIcon name="notes" color="#0D7655"/></View>
+          <Text style={s.notesEmptyTitle}>{notes.length===0?"अभी कोई नोट नहीं है":"कोई नोट नहीं मिला"}</Text>
+          <Text style={s.notesEmptyText}>{notes.length===0?"नया नोट बनाएँ या Bible के किसी Verse से Notes जोड़ें।":"खोज या Category बदलकर फिर से देखें।"}</Text>
+          {notes.length===0&&<Button label="पहला नोट लिखें" onPress={()=>openNewNote("personal")}/>}
+        </View>:filteredNotes.map(item=>{
+          const kindLabel=item.kind==="personal"?"व्यक्तिगत":item.kind==="verse"?"वचन नोट्स":"बाइबल अध्ययन";
+          return <View key={item.id} style={s.noteLibraryCard}>
+            <View style={s.noteLibraryCardTop}>
+              <View style={{flex:1,minWidth:0}}>
+                <Text style={s.noteLibraryTitle}>{item.title}</Text>
+                <Text style={s.noteLibraryMeta}>{kindLabel}  •  {new Date(item.updatedAt).toLocaleDateString("hi-IN")}</Text>
+              </View>
+              <View style={[s.noteKindBadge,item.kind==="verse"?s.noteKindVerse:item.kind==="study"?s.noteKindStudy:s.noteKindPersonal]}>
+                <Text style={s.noteKindBadgeText}>{kindLabel}</Text>
+              </View>
+            </View>
+            <Text style={s.noteLibraryContent} numberOfLines={4}>{item.content}</Text>
+            {!!item.reference&&<Pressable onPress={()=>openNoteReference(item)} style={s.noteReferenceChip}>
+              <Text style={s.noteReferenceText}>▤  {referenceLabel(item.reference)}  •  अध्याय खोलें ›</Text>
+            </Pressable>}
+            {!!item.tags.length&&<View style={s.noteTagList}>{item.tags.map(tag=><View key={tag} style={s.noteTag}><Text style={s.noteTagText}>#{tag}</Text></View>)}</View>}
+            <View style={s.noteCardActions}>
+              <Pressable onPress={()=>openEditNote(item)} style={s.noteCardAction}><Text style={s.noteCardActionText}>✎ Edit</Text></Pressable>
+              <Pressable onPress={()=>shareNote(item)} style={s.noteCardAction}><Text style={s.noteCardActionText}>↗ Share</Text></Pressable>
+              <Pressable onPress={()=>setNoteDeleteConfirmId(noteDeleteConfirmId===item.id?null:item.id)} style={s.noteCardDelete}><Text style={s.noteCardDeleteText}>⌫ Delete</Text></Pressable>
+            </View>
+            {noteDeleteConfirmId===item.id&&<View style={s.noteDeleteConfirm}>
+              <Text style={s.noteDeleteConfirmText}>“{item.title}” को स्थायी रूप से हटाएँ?</Text>
+              <View style={s.noteDeleteButtons}>
+                <Pressable onPress={()=>setNoteDeleteConfirmId(null)}><Text style={s.noteDeleteCancel}>रद्द करें</Text></Pressable>
+                <Pressable onPress={()=>deleteNote(item)}><Text style={s.noteDeleteYes}>नोट हटाएँ</Text></Pressable>
+              </View>
+            </View>}
+          </View>;
+        })}
+        <View style={s.notesFooter}>
+          <Text style={s.notesFooterText}>नोट्स अभी इस डिवाइस पर सुरक्षित हैं। App data साफ़ करने या दूसरे डिवाइस पर जाने से पहले उनका बैकअप रखें।</Text>
+        </View>
+      </>}
+
       {tab==="settings"&&<>
         <View style={s.innerHomeBar}>
           <Pressable onPress={()=>changeTab("home")} style={s.innerHomeButton} accessibilityRole="button" accessibilityLabel="होम पेज पर वापस जाएँ">
@@ -929,17 +1119,41 @@ export default function App() {
 
     <Modal visible={noteModalVisible} transparent animationType="slide" onRequestClose={()=>setNoteModalVisible(false)}>
       <View style={s.actionScrim}>
-        <View style={s.noteEditor}>
-          <View style={s.actionSheetHeader}>
-            <View style={{flex:1}}><Text style={s.actionSheetTitle}>वचन के नोट्स</Text><Text style={s.actionSheetSubtitle}>{activeVerseReference}</Text></View>
-            <Pressable onPress={()=>setNoteModalVisible(false)} hitSlop={12}><Text style={s.closeText}>✕</Text></Pressable>
+        <ScrollView style={s.noteEditorScroll} contentContainerStyle={s.noteEditorScrollContent} keyboardShouldPersistTaps="handled">
+          <View style={s.noteEditor}>
+            <View style={s.actionSheetHeader}>
+              <View style={{flex:1}}>
+                <Text style={s.actionSheetTitle}>{editingNoteId?"नोट संपादित करें":"नया नोट लिखें"}</Text>
+                <Text style={s.actionSheetSubtitle}>{noteReferenceDraft?referenceLabel(noteReferenceDraft):"आपके व्यक्तिगत विचार और Bible Study Notes"}</Text>
+              </View>
+              <Pressable onPress={()=>setNoteModalVisible(false)} hitSlop={12}><Text style={s.closeText}>✕</Text></Pressable>
+            </View>
+            <Text style={s.noteFieldLabel}>नोट का प्रकार</Text>
+            <View style={s.noteKindChoices}>
+              {([{id:"personal",label:"व्यक्तिगत"},{id:"verse",label:"वचन नोट"},{id:"study",label:"बाइबल अध्ययन"}] as {id:BibleNoteKind;label:string}[]).map(item=><Pressable key={item.id} onPress={()=>setNoteKindDraft(item.id)} style={[s.noteKindChoice,noteKindDraft===item.id&&s.noteKindChoiceActive]}>
+                <Text style={[s.noteKindChoiceText,noteKindDraft===item.id&&s.noteKindChoiceTextActive]}>{item.label}</Text>
+              </Pressable>)}
+            </View>
+            <Text style={s.noteFieldLabel}>शीर्षक</Text>
+            <TextInput value={noteTitleDraft} onChangeText={setNoteTitleDraft} placeholder="जैसे: आज का बाइबल अध्ययन" placeholderTextColor={C.muted} style={s.noteTitleInput} maxLength={100}/>
+            <Text style={s.noteFieldLabel}>आपका नोट</Text>
+            <TextInput value={noteDraft} onChangeText={setNoteDraft} multiline placeholder="अपना विचार, प्रार्थना, सीखी हुई बात या अध्ययन लिखें…" placeholderTextColor={C.muted} style={s.noteEditorInput}/>
+            <View style={s.noteReferenceEditorRow}>
+              <View style={{flex:1}}>
+                <Text style={s.noteFieldLabel}>Bible Reference (वैकल्पिक)</Text>
+                <Text style={s.noteReferenceEditorValue}>{noteReferenceDraft?referenceLabel(noteReferenceDraft):"कोई वचन/अध्याय नहीं जोड़ा गया"}</Text>
+              </View>
+              <Pressable style={s.noteReferenceAddButton} onPress={addCurrentChapterReference}><Text style={s.noteReferenceAddText}>{noteReferenceDraft?"वर्तमान अध्याय":"＋ जोड़ें"}</Text></Pressable>
+            </View>
+            {!!noteReferenceDraft&&<Pressable onPress={()=>setNoteReferenceDraft(null)} style={s.noteReferenceRemove}><Text style={s.noteReferenceRemoveText}>Reference हटाएँ</Text></Pressable>}
+            <Text style={s.noteFieldLabel}>Tags (Comma से अलग करें)</Text>
+            <TextInput value={noteTagsDraft} onChangeText={setNoteTagsDraft} placeholder="प्रार्थना, विश्वास, सीख" placeholderTextColor={C.muted} style={s.noteTitleInput}/>
+            <View style={s.noteEditorButtons}>
+              <Pressable style={s.noteCancelButton} onPress={()=>setNoteModalVisible(false)}><Text style={s.noteCancelText}>रद्द करें</Text></Pressable>
+              <Pressable style={[s.noteSaveButton,!noteDraft.trim()&&{opacity:.45}]} onPress={saveNote} disabled={!noteDraft.trim()}><Text style={s.noteSaveText}>नोट सेव करें</Text></Pressable>
+            </View>
           </View>
-          <TextInput value={noteDraft} onChangeText={setNoteDraft} multiline placeholder="इस वचन के बारे में अपना विचार लिखें…" placeholderTextColor={C.muted} style={s.noteEditorInput}/>
-          <View style={s.noteEditorButtons}>
-            <Pressable style={s.noteCancelButton} onPress={()=>setNoteModalVisible(false)}><Text style={s.noteCancelText}>रद्द करें</Text></Pressable>
-            <Pressable style={s.noteSaveButton} onPress={saveVerseNote}><Text style={s.noteSaveText}>नोट सेव करें</Text></Pressable>
-          </View>
-        </View>
+        </ScrollView>
       </View>
     </Modal>
   </SafeAreaView>;
@@ -1093,5 +1307,72 @@ planBottomWave:{marginTop:0,marginBottom:-1},
  noteCancelText:{color:"#334155",fontWeight:"800"},
  noteSaveButton:{paddingHorizontal:18,paddingVertical:12,borderRadius:10,backgroundColor:"#087A5C"},
  noteSaveText:{color:"#FFFFFF",fontWeight:"900"},
+
+  notesHeroCard:{backgroundColor:"#06483B",borderRadius:19,padding:16,marginTop:16,borderWidth:1,borderColor:"#D4B85D"},
+  notesHeroTop:{flexDirection:"row",alignItems:"center"},
+  notesHeroEyebrow:{fontSize:9,color:"#A9E2C8",fontWeight:"900",letterSpacing:1.2},
+  notesHeroTitle:{fontSize:21,color:"#FFFFFF",fontWeight:"900",marginTop:5},
+  notesHeroCaption:{fontSize:11,color:"#D6EDE1",marginTop:4},
+  notesHeroIcon:{width:52,height:52,borderRadius:16,backgroundColor:"#234B36",borderWidth:1,borderColor:"#E4BD56",alignItems:"center",justifyContent:"center"},
+  notesHeroActions:{flexDirection:"row",gap:9,marginTop:15},
+  notesPrimaryButton:{flex:1,minHeight:42,backgroundColor:"#EFCB67",borderRadius:11,alignItems:"center",justifyContent:"center"},
+  notesPrimaryButtonText:{fontSize:12,color:"#264535",fontWeight:"900"},
+  notesSecondaryButton:{flex:1,minHeight:42,backgroundColor:"#0A6650",borderWidth:1,borderColor:"#8CCEB3",borderRadius:11,alignItems:"center",justifyContent:"center"},
+  notesSecondaryButtonText:{fontSize:12,color:"#FFFFFF",fontWeight:"900"},
+  notesSearch:{backgroundColor:"#FFFFFF",borderWidth:1,borderColor:"#BDD9C8",borderRadius:13,paddingHorizontal:14,paddingVertical:12,color:C.ink,fontSize:14,marginTop:16},
+  notesFilters:{gap:8,paddingVertical:12,paddingRight:10},
+  notesFilterChip:{paddingHorizontal:12,paddingVertical:8,borderRadius:20,backgroundColor:"#E5F1E9",borderWidth:1,borderColor:"#C9DFD0"},
+  notesFilterChipActive:{backgroundColor:"#087A5C",borderColor:"#087A5C"},
+  notesFilterText:{fontSize:10,color:"#476758",fontWeight:"800"},
+  notesFilterTextActive:{color:"#FFFFFF"},
+  notesListHeading:{flexDirection:"row",alignItems:"center",justifyContent:"space-between"},
+  notesResultCount:{fontSize:11,color:"#638074",fontWeight:"800"},
+  notesEmpty:{alignItems:"center",backgroundColor:"#F8FCF9",borderWidth:1,borderColor:"#C9E1D1",borderRadius:17,padding:22,marginTop:10},
+  notesEmptyIcon:{width:56,height:56,borderRadius:18,backgroundColor:"#E0F1E6",alignItems:"center",justifyContent:"center",marginBottom:10},
+  notesEmptyTitle:{fontSize:17,color:"#164D38",fontWeight:"900"},
+  notesEmptyText:{fontSize:12,color:"#637B6E",lineHeight:19,textAlign:"center",marginTop:6},
+  noteLibraryCard:{backgroundColor:"#FAFDFA",borderWidth:1,borderColor:"#C9E1D1",borderRadius:16,padding:14,marginTop:11},
+  noteLibraryCardTop:{flexDirection:"row",alignItems:"flex-start",gap:8},
+  noteLibraryTitle:{fontSize:15,color:"#174B37",fontWeight:"900",flexShrink:1},
+  noteLibraryMeta:{fontSize:10,color:"#71877B",marginTop:5},
+  noteKindBadge:{paddingHorizontal:8,paddingVertical:5,borderRadius:12,alignSelf:"flex-start"},
+  noteKindPersonal:{backgroundColor:"#E3F1FF"},
+  noteKindVerse:{backgroundColor:"#FFF1D0"},
+  noteKindStudy:{backgroundColor:"#F0E8FB"},
+  noteKindBadgeText:{fontSize:9,color:"#34594A",fontWeight:"900"},
+  noteLibraryContent:{fontSize:13,color:"#29483B",lineHeight:21,marginTop:10},
+  noteReferenceChip:{alignSelf:"flex-start",backgroundColor:"#E5F3E9",borderWidth:1,borderColor:"#C5E2CF",borderRadius:10,paddingHorizontal:10,paddingVertical:7,marginTop:10},
+  noteReferenceText:{fontSize:10,color:"#0B7655",fontWeight:"900"},
+  noteTagList:{flexDirection:"row",flexWrap:"wrap",gap:6,marginTop:9},
+  noteTag:{backgroundColor:"#F0F5F1",borderRadius:10,paddingHorizontal:8,paddingVertical:4},
+  noteTagText:{fontSize:9,color:"#62796B",fontWeight:"800"},
+  noteCardActions:{flexDirection:"row",gap:8,borderTopWidth:1,borderTopColor:"#E1ECE4",paddingTop:10,marginTop:12},
+  noteCardAction:{flex:1,alignItems:"center",paddingVertical:7,backgroundColor:"#E9F4EC",borderRadius:9},
+  noteCardActionText:{fontSize:11,color:"#0D6D50",fontWeight:"900"},
+  noteCardDelete:{flex:1,alignItems:"center",paddingVertical:7,backgroundColor:"#FCEDEC",borderRadius:9},
+  noteCardDeleteText:{fontSize:11,color:"#A23C3C",fontWeight:"900"},
+  noteDeleteConfirm:{backgroundColor:"#FFF6E7",borderWidth:1,borderColor:"#E9CE96",borderRadius:10,padding:11,marginTop:10},
+  noteDeleteConfirmText:{fontSize:11,color:"#64491C",fontWeight:"800"},
+  noteDeleteButtons:{flexDirection:"row",justifyContent:"flex-end",gap:18,marginTop:10},
+  noteDeleteCancel:{fontSize:11,color:"#456B58",fontWeight:"900"},
+  noteDeleteYes:{fontSize:11,color:"#B23D36",fontWeight:"900"},
+  notesFooter:{backgroundColor:"#E7F2EA",borderRadius:11,padding:11,marginTop:15},
+  notesFooterText:{fontSize:10,color:"#5E786A",lineHeight:16},
+  noteEditorScroll:{width:"100%",maxHeight:"92%"},
+  noteEditorScrollContent:{flexGrow:1,justifyContent:"center",padding:12},
+  noteFieldLabel:{fontSize:12,color:"#315C48",fontWeight:"900",marginTop:13,marginBottom:6},
+  noteKindChoices:{flexDirection:"row",flexWrap:"wrap",gap:7},
+  noteKindChoice:{paddingHorizontal:10,paddingVertical:8,borderRadius:10,borderWidth:1,borderColor:"#C7DCD0",backgroundColor:"#F4F8F5"},
+  noteKindChoiceActive:{backgroundColor:"#087A5C",borderColor:"#087A5C"},
+  noteKindChoiceText:{fontSize:10,color:"#446757",fontWeight:"800"},
+  noteKindChoiceTextActive:{color:"#FFFFFF"},
+  noteTitleInput:{minHeight:43,borderWidth:1,borderColor:"#CBDDD1",borderRadius:11,paddingHorizontal:11,paddingVertical:9,color:"#172B3A",fontSize:14,backgroundColor:"#FBFDFC"},
+  noteReferenceEditorRow:{flexDirection:"row",alignItems:"center",gap:8,marginTop:6},
+  noteReferenceEditorValue:{fontSize:11,color:"#6B8075",marginTop:1},
+  noteReferenceAddButton:{backgroundColor:"#E0F1E6",borderWidth:1,borderColor:"#9FCDB0",borderRadius:9,paddingHorizontal:10,paddingVertical:8},
+  noteReferenceAddText:{fontSize:10,color:"#0B7655",fontWeight:"900"},
+  noteReferenceRemove:{alignSelf:"flex-start",paddingVertical:6},
+  noteReferenceRemoveText:{fontSize:10,color:"#A14A43",fontWeight:"800"},
+
 
 });
