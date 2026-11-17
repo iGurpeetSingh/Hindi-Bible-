@@ -559,7 +559,7 @@ export default function App() {
       }
       audioPlayer.replace(existingLocalUri || chosen.audioUrl);
       if(autoPlay) {
-        audioPlayer.setActiveForLockScreen(true,{title:`${nextBook.hindi} अध्याय ${nextChapter}`,artist:"Hindi Bible",albumTitle:"Audio Bible"},{showNextTrack:true,showPreviousTrack:true,showSeekForward:true,showSeekBackward:true});
+        audioPlayer.setActiveForLockScreen(true,{title:`${nextBook.hindi} अध्याय ${nextChapter}`,artist:"Hindi Bible",albumTitle:"Audio Bible"},{showSeekForward:true,showSeekBackward:true});
         audioPlayer.play();
       }
     } catch(e) {
@@ -571,7 +571,7 @@ export default function App() {
     if(!selectedAudio){await openAudioChapter(book,chapter,false);return;}
     try {
       await setAudioModeAsync({playsInSilentMode:true,shouldPlayInBackground:true,interruptionMode:"doNotMix"});
-      audioPlayer.setActiveForLockScreen(true,{title:`${book.hindi} अध्याय ${chapter}`,artist:"Hindi Bible",albumTitle:"Audio Bible"},{showNextTrack:true,showPreviousTrack:true,showSeekForward:true,showSeekBackward:true});
+      audioPlayer.setActiveForLockScreen(true,{title:`${book.hindi} अध्याय ${chapter}`,artist:"Hindi Bible",albumTitle:"Audio Bible"},{showSeekForward:true,showSeekBackward:true});
       if(audioStatus.didJustFinish) await audioPlayer.seekTo(0);
       audioPlayer.play();
     } catch(e) {setAudioError(e instanceof Error?e.message:"Audio playback शुरू नहीं हो पाया।");}
@@ -648,7 +648,7 @@ export default function App() {
           <ImageBackground
             source={require("./assets/home/header-cross.jpg")}
             style={s.homeHeader}
-            imageStyle={s.homeHeaderImage}
+            imageStyle={{width:"100%",height:"100%",resizeMode:"stretch"}}
             resizeMode="stretch"
             accessibilityLabel="Cross और पवित्र बाइबल का मुख्य बैनर"
           >
@@ -658,7 +658,7 @@ export default function App() {
           </ImageBackground>
 
           <Pressable style={s.homeHero} onPress={()=>openChapter(BOOKS[0],1)} accessibilityRole="button">
-            <Image source={require("./assets/home/open-bible.jpg")} style={s.homeHeroPhoto} resizeMode="cover"/>
+            <Image source={require("./assets/home/open-bible.jpg")} style={{position:"absolute",top:0,right:0,bottom:0,left:0,width:"100%",height:"100%",zIndex:0}} resizeMode="cover"/>
             <View style={s.homeHeroShade}/>
             <View style={s.homeHeroCopy}>
               <Text style={s.homeEyebrow}>आज का आमंत्रण</Text>
@@ -718,7 +718,7 @@ export default function App() {
           <Pressable onPress={()=>changeTab("settings")} style={s.headerAction}><Text style={s.headerActionText}>⚙</Text></Pressable>
         </View>
         <ScrollView horizontal showsHorizontalScrollIndicator={false} style={s.chapterStrip} contentContainerStyle={s.chapterStripContent}>
-          {chapterNumbers.map(n=><Pressable key={n} onPress={()=>tab==="audio"?openAudioChapter(book,n):openChapter(book,n)} style={[s.chapterPill,n===chapter&&s.chapterPillActive]}><Text style={[s.chapterPillText,n===chapter&&s.chapterPillTextActive]}>{n}</Text></Pressable>)}
+          {chapterNumbers.map(n=><Pressable key={n} onPress={()=>openChapter(book,n)} style={[s.chapterPill,n===chapter&&s.chapterPillActive]}><Text style={[s.chapterPillText,n===chapter&&s.chapterPillTextActive]}>{n}</Text></Pressable>)}
         </ScrollView>
         <View style={s.readerActions}>
           <Text style={s.readerTitle}>{book.hindi} {chapter}</Text>
@@ -813,7 +813,7 @@ export default function App() {
 
       {tab==="plan"&&<>
         <View style={s.planPage}>
-          <ImageBackground source={require("./assets/reading-plan/plan-header.jpg")} style={s.planHeroImage} imageStyle={s.planHeroImageStyle} resizeMode="stretch" accessibilityLabel="पढ़ने की योजना का Cross और Bible वाला banner">
+          <ImageBackground source={require("./assets/reading-plan/plan-header.jpg")} style={s.planHeroImage} imageStyle={{width:"100%",height:"100%",resizeMode:"stretch"}} resizeMode="stretch" accessibilityLabel="पढ़ने की योजना का Cross और Bible वाला banner">
             <Pressable onPress={()=>changeTab("home")} style={s.planHeroHomeHitbox} accessibilityRole="button" accessibilityLabel="होम पेज पर वापस जाएँ"/>
           </ImageBackground>
           {!planProgress?<>
@@ -840,7 +840,7 @@ export default function App() {
           </>:!activePlanTemplate?<View style={s.emptyBox}><Text style={s.emptyTitle}>योजना उपलब्ध नहीं</Text><Text style={s.muted}>सेव की गई योजना की जानकारी नहीं मिली। इसे बंद करके नई योजना चुनें।</Text><Button label="योजना हटाएँ" onPress={stopReadingPlan}/></View>:<>
             <View style={s.planSummaryCard}>
               <View style={s.planSummaryTop}>
-                <Image source={require("./assets/home/open-bible.jpg")} style={s.planCoverImage} resizeMode="cover"/>
+                <Image source={require("./assets/home/open-bible.jpg")} style={{width:65,height:70,borderRadius:14,borderWidth:1.2,borderColor:"#D4B65C"}} resizeMode="cover"/>
                 <View style={s.planSummaryCopy}>
                   <View style={s.planActivePill}><Text style={s.planActivePillText}>आपकी सक्रिय योजना</Text></View>
                   <Text style={s.planSummaryTitle}>{activePlanTemplate.title}</Text>
@@ -1161,7 +1161,7 @@ export default function App() {
 
 const s=StyleSheet.create({
  audioPanel:{backgroundColor:C.white,borderRadius:18,padding:16,borderWidth:1,borderColor:C.line,marginTop:14},audioTitle:{fontSize:22,fontWeight:"900",color:C.ink,marginTop:8},audioLabel:{fontSize:13,fontWeight:"800",color:C.ink,marginTop:18,marginBottom:8},readerChoices:{flexDirection:"row",flexWrap:"wrap",gap:8},readerChoice:{paddingHorizontal:13,paddingVertical:9,borderRadius:20,borderWidth:1,borderColor:C.line,backgroundColor:"#F4F7FB"},readerChoiceActive:{backgroundColor:C.blue,borderColor:C.blue},readerChoiceText:{fontSize:12,color:C.ink,fontWeight:"800"},audioProgressRow:{flexDirection:"row",justifyContent:"space-between",marginTop:18},audioProgress:{height:7,backgroundColor:"#E1E8F0",borderRadius:8,overflow:"hidden",marginTop:5},audioProgressFill:{height:7,backgroundColor:C.blue,borderRadius:8},audioControls:{flexDirection:"row",alignItems:"center",justifyContent:"space-between",marginTop:18,marginBottom:10},audioControl:{minWidth:38,height:42,alignItems:"center",justifyContent:"center"},audioControlText:{fontSize:13,fontWeight:"800",color:C.ink},audioPlay:{width:58,height:58,borderRadius:29,backgroundColor:C.blue,alignItems:"center",justifyContent:"center"},audioPlayText:{fontSize:25,color:C.white,fontWeight:"900"},audioHint:{fontSize:11,color:C.muted,lineHeight:18,marginTop:12},
- safe:{flex:1,height:Platform.OS==="web"?"100vh":undefined,minHeight:Platform.OS==="web"?"100vh":undefined,width:"100%",maxWidth:480,alignSelf:"center",overflow:"hidden",backgroundColor:C.bg,paddingTop:Platform.OS==="android"?(StatusBar.currentHeight||24):Platform.OS==="web"?12:0},safeHome:{backgroundColor:"#002D28"},body:{flex:1,minHeight:0,width:"100%"},content:{flexGrow:1,padding:17,paddingBottom:28},homePage:{marginHorizontal:-17,marginTop:-17,paddingHorizontal:16,paddingTop:0,paddingBottom:28,backgroundColor:"#002D28",overflow:"hidden"},homePageGradient:{position:"absolute",top:0,right:0,bottom:0,left:0,zIndex:0},
+ safe:{flex:1,height:Platform.OS==="web"?"100%":undefined,minHeight:Platform.OS==="web"?"100%":undefined,width:"100%",maxWidth:480,alignSelf:"center",overflow:"hidden",backgroundColor:C.bg,paddingTop:Platform.OS==="android"?(StatusBar.currentHeight||24):Platform.OS==="web"?12:0},safeHome:{backgroundColor:"#002D28"},body:{flex:1,minHeight:0,width:"100%"},content:{flexGrow:1,padding:17,paddingBottom:28},homePage:{marginHorizontal:-17,marginTop:-17,paddingHorizontal:16,paddingTop:0,paddingBottom:28,backgroundColor:"#002D28",overflow:"hidden"},homePageGradient:{position:"absolute",top:0,right:0,bottom:0,left:0,zIndex:0},
 homeHeader:{aspectRatio:4.33,alignSelf:"stretch",marginHorizontal:-16,marginBottom:12,overflow:"hidden",backgroundColor:"#002D28",justifyContent:"flex-end"},homeHeaderImage:{width:"100%",height:"100%",resizeMode:"stretch"},
 
 
@@ -1373,6 +1373,12 @@ planBottomWave:{marginTop:0,marginBottom:-1},
   noteReferenceAddText:{fontSize:10,color:"#0B7655",fontWeight:"900"},
   noteReferenceRemove:{alignSelf:"flex-start",paddingVertical:6},
   noteReferenceRemoveText:{fontSize:10,color:"#A14A43",fontWeight:"800"},
+
+
+  actionScrim:{flex:1,backgroundColor:"rgba(9,20,32,0.55)",justifyContent:"flex-end",padding:14},
+  actionSheetHeader:{flexDirection:"row",alignItems:"center",justifyContent:"space-between",marginBottom:12},
+  actionSheetTitle:{fontSize:18,color:"#17382B",fontWeight:"900"},
+  actionSheetSubtitle:{fontSize:11,color:"#688075",marginTop:3},
 
 
 });
