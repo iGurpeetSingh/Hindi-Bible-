@@ -88,6 +88,9 @@ export default function App() {
   const [noteQuery,setNoteQuery]=useState("");
   const [noteFilter,setNoteFilter]=useState("सभी");
   const [noteDeleteConfirmId,setNoteDeleteConfirmId]=useState<string|null>(null);
+  const [noteSortMode,setNoteSortMode]=useState<"newest"|"oldest"|"title">("newest");
+  const [noteSortMenuVisible,setNoteSortMenuVisible]=useState(false);
+  const [noteActionsOpenId,setNoteActionsOpenId]=useState<string|null>(null);
   const [noteBackupModalVisible,setNoteBackupModalVisible]=useState(false);
   const [noteImportDraft,setNoteImportDraft]=useState("");
   const [verseNotes,setVerseNotes]=useState<Record<string,string>>({});
@@ -185,8 +188,8 @@ export default function App() {
       if(!term)return true;
       const reference=item.reference?`${item.reference.bookHindi} ${item.reference.bookEnglish} ${item.reference.chapter} ${item.reference.verse||""}`:"";
       return [item.title,item.content,item.tags.join(" "),reference].join(" ").toLocaleLowerCase("hi").includes(term);
-    }).sort((a,b)=>b.updatedAt-a.updatedAt);
-  },[notes,noteQuery,noteFilter]);
+    }).sort((a,b)=>noteSortMode==="oldest"?a.updatedAt-b.updatedAt:noteSortMode==="title"?a.title.localeCompare(b.title,"hi"):b.updatedAt-a.updatedAt);
+  },[notes,noteQuery,noteFilter,noteSortMode]);
   const noteCategoryCounts=useMemo(()=>({
     "सभी":notes.length,
     "व्यक्तिगत":notes.filter(item=>item.kind==="personal").length,
@@ -405,6 +408,15 @@ export default function App() {
       Alert.alert("Backup तैयार है",`${notes.length} नोट्स का JSON Backup Clipboard में कॉपी हो गया है। इसे किसी सुरक्षित जगह सेव करें।`);
     } catch {
       Alert.alert("Backup नहीं बना","Clipboard तक पहुँच उपलब्ध नहीं है।");
+    }
+  }
+
+  async function exportNotesBackup() {
+    const payload={format:"hindi-bible-notes",version:1,exportedAt:new Date().toISOString(),notes};
+    try {
+      await Share.share({title:"Hindi Bible Notes Backup",message:JSON.stringify(payload,null,2)});
+    } catch {
+      Alert.alert("Export नहीं हुआ","Notes Backup शेयर करते समय समस्या आई।");
     }
   }
 
@@ -686,8 +698,8 @@ export default function App() {
     if(audioStatus.didJustFinish && audioAutoNext && tab==="audio") skipAudioChapter(1);
   },[audioStatus.didJustFinish,audioAutoNext,tab]);
 
-  return <SafeAreaView style={[s.safe,tab==="home"&&s.safeHome]}>
-    <StatusBar barStyle={(tab==="home"||tab==="plan")?"light-content":"dark-content"} backgroundColor={(tab==="home"||tab==="plan")?"#002D28":C.pale}/>
+  return <SafeAreaView style={[s.safe,(tab==="home"||tab==="notes")&&s.safeHome]}>
+    <StatusBar barStyle={(tab==="home"||tab==="plan"||tab==="notes")?"light-content":"dark-content"} backgroundColor={(tab==="home"||tab==="plan"||tab==="notes")?"#002D28":C.pale}/>
     <ScrollView style={s.body} contentContainerStyle={s.content} keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={true} nestedScrollEnabled={true}>
       {tab==="home"&&<>
         <View style={s.homePage}>
@@ -994,86 +1006,164 @@ export default function App() {
       </>}
 
       {tab==="notes"&&<>
-        <View style={s.innerHomeBar}>
-          <Pressable onPress={()=>changeTab("home")} style={s.innerHomeButton} accessibilityRole="button" accessibilityLabel="होम पेज पर वापस जाएँ">
-            <Text style={s.innerHomeIcon}>⌂</Text><Text style={s.innerHomeText}>होम पर जाएँ</Text>
-          </Pressable>
-          <Text style={s.innerPageTag}>MY BIBLE NOTES</Text>
-        </View>
-        <Text style={s.pageHeading}>मेरे नोट्स</Text>
-        <Text style={s.muted}>अपने विचार, वचन से जुड़े नोट्स और बाइबल अध्ययन एक जगह सुरक्षित रखें। सभी नोट इस डिवाइस में सेव होते हैं।</Text>
-
-        <View style={s.notesHeroCard}>
-          <View style={s.notesHeroTop}>
-            <View style={{flex:1}}>
-              <Text style={s.notesHeroEyebrow}>YOUR NOTES LIBRARY</Text>
-              <Text style={s.notesHeroTitle}>{notes.length} सेव किए गए नोट्स</Text>
-              <Text style={s.notesHeroCaption}>व्यक्तिगत विचार • वचन • अध्ययन</Text>
+        <View style={s.notesPageV2}>
+          <ImageBackground
+            source={require("./assets/notes/notes-hero.jpg")}
+            style={s.notesHeroV2}
+            imageStyle={{width:"100%",height:"100%",resizeMode:"cover"}}
+            resizeMode="cover"
+            accessibilityLabel="Cross, mountains and open Bible at sunrise"
+          >
+            <View style={s.notesHeroOverlayV2}/>
+            <View style={s.notesHeroNavV2}>
+              <Pressable onPress={()=>changeTab("home")} style={s.notesHomePillV2} accessibilityRole="button" accessibilityLabel="होम पेज पर वापस जाएँ">
+                <Text style={s.notesHomeIconV2}>⌂</Text>
+                <Text style={s.notesHomeTextV2}>होम पर जाएँ</Text>
+              </Pressable>
+              <Text style={s.notesHeroTagV2}>MY BIBLE NOTES</Text>
             </View>
-            <View style={s.notesHeroIcon}><HomeFeatureIcon name="notes" color="#F5C65B"/></View>
-          </View>
-          <View style={s.notesHeroActions}>
-            <Pressable style={s.notesPrimaryButton} onPress={()=>openNewNote("personal")}><Text style={s.notesPrimaryButtonText}>＋ नया नोट</Text></Pressable>
-            <Pressable style={s.notesSecondaryButton} onPress={()=>openNewNote("study")}><Text style={s.notesSecondaryButtonText}>＋ Bible Study</Text></Pressable>
-          </View>
-          <View style={s.notesUtilityActions}>
-            <Pressable style={s.notesUtilityButton} onPress={copyNotesBackup}><Text style={s.notesUtilityText}>↓ Backup Copy</Text></Pressable>
-            <Pressable style={s.notesUtilityButton} onPress={openNotesImport}><Text style={s.notesUtilityText}>↑ Backup Import</Text></Pressable>
-          </View>
-        </View>
-
-        <TextInput value={noteQuery} onChangeText={setNoteQuery} placeholder="नोट का शीर्षक, वचन या शब्द खोजें…" placeholderTextColor={C.muted} style={s.notesSearch}/>
-        <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={s.notesFilters}>
-          {noteFilterOptions.map(item=><Pressable key={item} onPress={()=>setNoteFilter(item)} style={[s.notesFilterChip,noteFilter===item&&s.notesFilterChipActive]}>
-            <Text style={[s.notesFilterText,noteFilter===item&&s.notesFilterTextActive]}>{item} ({noteCategoryCounts[item as keyof typeof noteCategoryCounts]})</Text>
-          </Pressable>)}
-        </ScrollView>
-
-        <View style={s.notesListHeading}>
-          <Text style={s.sectionTitle}>आपके नोट्स</Text>
-          <Text style={s.notesResultCount}>{filteredNotes.length} परिणाम</Text>
-        </View>
-        {filteredNotes.length===0?<View style={s.notesEmpty}>
-          <View style={s.notesEmptyIcon}><HomeFeatureIcon name="notes" color="#0D7655"/></View>
-          <Text style={s.notesEmptyTitle}>{notes.length===0?"अभी कोई नोट नहीं है":"कोई नोट नहीं मिला"}</Text>
-          <Text style={s.notesEmptyText}>{notes.length===0?"नया नोट बनाएँ या Bible के किसी Verse से Notes जोड़ें।":"खोज या Category बदलकर फिर से देखें।"}</Text>
-          {notes.length===0&&<Button label="पहला नोट लिखें" onPress={()=>openNewNote("personal")}/>}
-        </View>:filteredNotes.map(item=>{
-          const kindLabel=item.kind==="personal"?"व्यक्तिगत":item.kind==="verse"?"वचन नोट्स":"बाइबल अध्ययन";
-          return <View key={item.id} style={s.noteLibraryCard}>
-            <View style={s.noteLibraryCardTop}>
-              <View style={{flex:1,minWidth:0}}>
-                <Text style={s.noteLibraryTitle}>{item.title}</Text>
-                <Text style={s.noteLibraryMeta}>{kindLabel}  •  {new Date(item.updatedAt).toLocaleDateString("hi-IN")}</Text>
+            <View style={s.notesHeroCopyV2}>
+              <View style={s.notesHeroTitleRowV2}>
+                <View style={s.notesHeroTitleIconV2}><HomeFeatureIcon name="notes" color="#F5C65B"/></View>
+                <Text style={s.notesHeroTitleV2}>मेरे <Text style={s.notesHeroGoldV2}>नोट्स</Text></Text>
               </View>
-              <View style={[s.noteKindBadge,item.kind==="verse"?s.noteKindVerse:item.kind==="study"?s.noteKindStudy:s.noteKindPersonal]}>
-                <Text style={s.noteKindBadgeText}>{kindLabel}</Text>
+              <Text style={s.notesHeroSubtitleV2}>अपने विचार, वचन से जुड़े नोट्स और बाइबल अध्ययन एक जगह सुरक्षित रखें। सभी नोट इस डिवाइस में सेव होते हैं।</Text>
+              <View style={s.notesHeroUnderlineV2}/>
+            </View>
+          </ImageBackground>
+
+          <View style={s.notesBodyV2}>
+            <View style={s.notesSummaryV2}>
+              <View style={s.notesSummaryTopV2}>
+                <View style={s.notesSummaryIconV2}><HomeFeatureIcon name="notes" color="#F6CF64"/></View>
+                <View style={s.notesSummaryCopyV2}>
+                  <Text style={s.notesSummaryEyebrowV2}>आपकी नोट्स लाइब्रेरी</Text>
+                  <Text style={s.notesSummaryTitleV2}>{notes.length} सेव किए गए नोट्स</Text>
+                  <Text style={s.notesSummaryCaptionV2}>व्यक्तिगत विचार • वचन नोट्स • बाइबल अध्ययन</Text>
+                </View>
+                <View style={s.notesMiniChartV2}>
+                  <View style={[s.notesMiniBarV2,{height:13,backgroundColor:"#C89A38"}]}/>
+                  <View style={[s.notesMiniBarV2,{height:23,backgroundColor:"#DDB84D"}]}/>
+                  <View style={[s.notesMiniBarV2,{height:33,backgroundColor:"#27B989"}]}/>
+                </View>
+              </View>
+              <View style={s.notesHeroActionsV2}>
+                <Pressable style={s.notesPrimaryButtonV2} onPress={()=>openNewNote("personal")} accessibilityRole="button">
+                  <Text style={s.notesPrimaryButtonTextV2}>＋ नया नोट</Text>
+                </Pressable>
+                <Pressable style={s.notesSecondaryButtonV2} onPress={()=>openNewNote("study")} accessibilityRole="button">
+                  <Text style={s.notesSecondaryButtonTextV2}>＋ Bible Study</Text>
+                </Pressable>
               </View>
             </View>
-            <Text style={s.noteLibraryContent} numberOfLines={4}>{item.content}</Text>
-            {!!item.reference&&<Pressable onPress={()=>openNoteReference(item)} style={s.noteReferenceChip}>
-              <Text style={s.noteReferenceText}>▤  {referenceLabel(item.reference)}  •  अध्याय खोलें ›</Text>
-            </Pressable>}
-            {!!item.tags.length&&<View style={s.noteTagList}>{item.tags.map(tag=><View key={tag} style={s.noteTag}><Text style={s.noteTagText}>#{tag}</Text></View>)}</View>}
-            <View style={s.noteCardActions}>
-              <Pressable onPress={()=>openEditNote(item)} style={s.noteCardAction}><Text style={s.noteCardActionText}>✎ Edit</Text></Pressable>
-              <Pressable onPress={()=>shareNote(item)} style={s.noteCardAction}><Text style={s.noteCardActionText}>↗ Share</Text></Pressable>
-              <Pressable onPress={()=>setNoteDeleteConfirmId(noteDeleteConfirmId===item.id?null:item.id)} style={s.noteCardDelete}><Text style={s.noteCardDeleteText}>⌫ Delete</Text></Pressable>
+
+            <View style={s.notesSearchV2}>
+              <Text style={s.notesSearchIconV2}>⌕</Text>
+              <TextInput
+                value={noteQuery}
+                onChangeText={setNoteQuery}
+                placeholder="नोट का शीर्षक, वचन या शब्द खोजें…"
+                placeholderTextColor="#6B8378"
+                style={s.notesSearchInputV2}
+                returnKeyType="search"
+                accessibilityLabel="अपने नोट्स खोजें"
+              />
+              <Pressable onPress={()=>setNoteSortMenuVisible(!noteSortMenuVisible)} style={s.notesFilterButtonV2} accessibilityRole="button" accessibilityLabel="नोट्स क्रम बदलें">
+                <Text style={s.notesFilterIconV2}>☷</Text>
+              </Pressable>
             </View>
-            {noteDeleteConfirmId===item.id&&<View style={s.noteDeleteConfirm}>
-              <Text style={s.noteDeleteConfirmText}>“{item.title}” को स्थायी रूप से हटाएँ?</Text>
-              <View style={s.noteDeleteButtons}>
-                <Pressable onPress={()=>setNoteDeleteConfirmId(null)}><Text style={s.noteDeleteCancel}>रद्द करें</Text></Pressable>
-                <Pressable onPress={()=>deleteNote(item)}><Text style={s.noteDeleteYes}>नोट हटाएँ</Text></Pressable>
-              </View>
+
+            {noteSortMenuVisible&&<View style={s.notesSortMenuV2}>
+              <Text style={s.notesSortTitleV2}>नोट्स क्रमबद्ध करें</Text>
+              {([{id:"newest",label:"नवीनतम पहले"},{id:"oldest",label:"पुराने पहले"},{id:"title",label:"शीर्षक के अनुसार"}] as {id:"newest"|"oldest"|"title";label:string}[]).map(item=><Pressable key={item.id} onPress={()=>{setNoteSortMode(item.id);setNoteSortMenuVisible(false);}} style={[s.notesSortOptionV2,noteSortMode===item.id&&s.notesSortOptionActiveV2]}>
+                <Text style={[s.notesSortOptionTextV2,noteSortMode===item.id&&s.notesSortOptionTextActiveV2]}>{item.label}</Text>
+                <Text style={s.notesSortTickV2}>{noteSortMode===item.id?"✓":""}</Text>
+              </Pressable>)}
             </View>}
-          </View>;
-        })}
-        <View style={s.notesFooter}>
-          <Text style={s.notesFooterText}>नोट्स अभी इस डिवाइस पर सुरक्षित हैं। App data साफ़ करने या दूसरे डिवाइस पर जाने से पहले उनका बैकअप रखें।</Text>
+
+            <View style={s.notesCategoryGridV2}>
+              {noteFilterOptions.map((item,index)=>{
+                const iconName=(index===0?"bookmark":index===1?"notes":index===2?"bookmark":"study") as HomeIconName;
+                const count=noteCategoryCounts[item as keyof typeof noteCategoryCounts];
+                const active=noteFilter===item;
+                return <Pressable key={item} onPress={()=>setNoteFilter(item)} style={[s.notesCategoryCardV2,active&&s.notesCategoryCardActiveV2]} accessibilityRole="button" accessibilityState={{selected:active}}>
+                  <HomeFeatureIcon name={iconName} color={active?"#FFFFFF":"#087A5C"}/>
+                  <Text style={[s.notesCategoryLabelV2,active&&s.notesCategoryLabelActiveV2]} numberOfLines={2}>{item}</Text>
+                  <Text style={[s.notesCategoryCountV2,active&&s.notesCategoryCountActiveV2]}>({count})</Text>
+                  {active&&<View style={s.notesCategoryActiveMarkV2}/>}
+                </Pressable>;
+              })}
+            </View>
+
+            <View style={s.notesListHeadingV2}>
+              <View style={s.notesListTitleRowV2}>
+                <Text style={s.notesListBookmarkV2}>▰</Text>
+                <Text style={s.notesListTitleV2}>आपके नोट्स</Text>
+              </View>
+              <Text style={s.notesResultCountV2}>{filteredNotes.length} परिणाम</Text>
+            </View>
+
+            {filteredNotes.length===0?<View style={s.notesEmptyV2}>
+              <View style={s.notesEmptyIconV2}><HomeFeatureIcon name="notes" color="#087A5C"/></View>
+              <Text style={s.notesEmptyTitleV2}>{notes.length===0?"अभी कोई नोट नहीं है":"कोई नोट नहीं मिला"}</Text>
+              <Text style={s.notesEmptyTextV2}>{notes.length===0?"नया नोट बनाएँ या Bible के किसी Verse से Notes जोड़ें।":"खोज या Category बदलकर फिर से देखें।"}</Text>
+              {notes.length===0&&<Pressable style={s.notesEmptyButtonV2} onPress={()=>openNewNote("personal")}><Text style={s.notesEmptyButtonTextV2}>पहला नोट लिखें</Text></Pressable>}
+            </View>:filteredNotes.map(item=>{
+              const kindLabel=item.kind==="personal"?"व्यक्तिगत":item.kind==="verse"?"वचन नोट":"बाइबल अध्ययन";
+              const iconName=(item.kind==="verse"?"bookmark":item.kind==="study"?"study":"notes") as HomeIconName;
+              const isOpen=noteActionsOpenId===item.id;
+              return <View key={item.id} style={[s.noteCardV2,item.kind==="personal"?s.noteCardPersonalV2:item.kind==="study"?s.noteCardStudyV2:s.noteCardVerseV2]}>
+                <View style={s.noteCardMainV2}>
+                  <View style={[s.noteCardIconV2,item.kind==="personal"?s.noteCardIconPersonalV2:item.kind==="study"?s.noteCardIconStudyV2:s.noteCardIconVerseV2]}>
+                    <HomeFeatureIcon name={iconName} color={item.kind==="personal"?"#8555BD":item.kind==="study"?"#1565CB":"#087A5C"}/>
+                  </View>
+                  <Pressable onPress={()=>openEditNote(item)} style={s.noteCardCopyV2} accessibilityRole="button" accessibilityLabel={`नोट खोलें: ${item.title}`}>
+                    <Text style={s.noteCardTitleV2} numberOfLines={1}>{item.title}</Text>
+                    <Text style={s.noteCardExcerptV2} numberOfLines={2}>{item.content}</Text>
+                    {!!item.reference&&<Text style={s.noteCardReferenceV2} numberOfLines={1}>{referenceLabel(item.reference)}</Text>}
+                  </Pressable>
+                  <Pressable onPress={()=>setNoteActionsOpenId(isOpen?null:item.id)} style={s.noteCardMoreV2} accessibilityRole="button" accessibilityLabel="नोट के विकल्प">
+                    <Text style={s.noteCardMoreTextV2}>•••</Text>
+                  </Pressable>
+                </View>
+                <View style={s.noteCardMetaV2}>
+                  <View style={[s.noteKindPillV2,item.kind==="personal"?s.noteKindPersonalV2:item.kind==="study"?s.noteKindStudyV2:s.noteKindVerseV2]}>
+                    <Text style={[s.noteKindPillTextV2,item.kind==="personal"?s.noteKindTextPersonalV2:item.kind==="study"?s.noteKindTextStudyV2:s.noteKindTextVerseV2]}>{kindLabel}</Text>
+                  </View>
+                  {!!item.tags.length&&<Text style={s.noteCardTagsV2} numberOfLines={1}>{item.tags.map(tag=>"#"+tag).join("  ")}</Text>}
+                  <Text style={s.noteCardDateV2}>{new Date(item.updatedAt).toLocaleDateString("hi-IN",{day:"numeric",month:"short",year:"numeric"})}</Text>
+                </View>
+                {isOpen&&<View style={s.noteActionsMenuV2}>
+                  <Pressable onPress={()=>{setNoteActionsOpenId(null);openEditNote(item);}} style={s.noteActionButtonV2}><Text style={s.noteActionTextV2}>✎ संपादित करें</Text></Pressable>
+                  <Pressable onPress={()=>{setNoteActionsOpenId(null);shareNote(item);}} style={s.noteActionButtonV2}><Text style={s.noteActionTextV2}>↗ शेयर करें</Text></Pressable>
+                  <Pressable onPress={()=>{setNoteActionsOpenId(null);setNoteDeleteConfirmId(item.id);}} style={s.noteActionDeleteV2}><Text style={s.noteActionDeleteTextV2}>⌫ हटाएँ</Text></Pressable>
+                </View>}
+                {noteDeleteConfirmId===item.id&&<View style={s.noteDeleteConfirmV2}>
+                  <Text style={s.noteDeleteConfirmTextV2}>“{item.title}” को हटाएँ?</Text>
+                  <View style={s.noteDeleteButtonsV2}>
+                    <Pressable onPress={()=>setNoteDeleteConfirmId(null)}><Text style={s.noteDeleteCancelV2}>रद्द करें</Text></Pressable>
+                    <Pressable onPress={()=>deleteNote(item)}><Text style={s.noteDeleteYesV2}>नोट हटाएँ</Text></Pressable>
+                  </View>
+                </View>}
+              </View>;
+            })}
+
+            <View style={s.notesFabRowV2}>
+              <Pressable onPress={()=>openNewNote("personal")} style={s.notesFabV2} accessibilityRole="button" accessibilityLabel="नया नोट बनाएँ">
+                <Text style={s.notesFabPlusV2}>＋</Text>
+              </Pressable>
+            </View>
+
+            <View style={s.notesBottomToolsV2}>
+              <Pressable onPress={copyNotesBackup} style={s.notesBottomToolV2}><Text style={s.notesBottomToolIconV2}>☁</Text><Text style={s.notesBottomToolTextV2}>बैकअप</Text></Pressable>
+              <Pressable onPress={openNotesImport} style={s.notesBottomToolV2}><Text style={s.notesBottomToolIconV2}>↓</Text><Text style={s.notesBottomToolTextV2}>आयात करें</Text></Pressable>
+              <Pressable onPress={exportNotesBackup} style={s.notesBottomToolV2}><Text style={s.notesBottomToolIconV2}>↑</Text><Text style={s.notesBottomToolTextV2}>निर्यात करें</Text></Pressable>
+              <Pressable onPress={()=>changeTab("settings")} style={s.notesBottomToolV2}><Text style={s.notesBottomToolIconV2}>⚙</Text><Text style={s.notesBottomToolTextV2}>सेटिंग्स</Text></Pressable>
+            </View>
+            <Text style={s.notesFooterV2}>नोट्स इसी डिवाइस पर सुरक्षित रहते हैं। नियमित Backup बनाकर अपने विचार सुरक्षित रखें।</Text>
+          </View>
         </View>
       </>}
-
       {tab==="settings"&&<>
         <View style={s.innerHomeBar}>
           <Pressable onPress={()=>changeTab("home")} style={s.innerHomeButton} accessibilityRole="button" accessibilityLabel="होम पेज पर वापस जाएँ">
@@ -1467,6 +1557,113 @@ planBottomWave:{marginTop:0,marginBottom:-1},
   notesUtilityText:{fontSize:10,color:"#E5F3E9",fontWeight:"800"},
   noteBackupHint:{fontSize:11,color:"#647B6E",lineHeight:17,marginTop:8},
   noteBackupInput:{minHeight:180,maxHeight:320,borderWidth:1,borderColor:"#CBDDD1",borderRadius:11,padding:11,color:"#172B3A",fontSize:11,textAlignVertical:"top",backgroundColor:"#FBFDFC",marginTop:12},
+
+
+  notesPageV2:{marginHorizontal:-17,marginTop:-17,paddingBottom:22,backgroundColor:"#DDF3E7",overflow:"hidden"},
+  notesHeroV2:{width:"100%",height:194,paddingHorizontal:13,paddingTop:13,paddingBottom:14,justifyContent:"space-between",backgroundColor:"#003F35"},
+  notesHeroOverlayV2:{...StyleSheet.absoluteFillObject,backgroundColor:"rgba(0,37,30,0.12)"},
+  notesHeroNavV2:{flexDirection:"row",alignItems:"center",justifyContent:"space-between",gap:8},
+  notesHomePillV2:{flexDirection:"row",alignItems:"center",gap:6,paddingHorizontal:11,paddingVertical:7,borderRadius:20,backgroundColor:"rgba(0,72,54,0.82)",borderWidth:1,borderColor:"#E9C65E"},
+  notesHomeIconV2:{fontSize:17,color:"#FFE8A0",fontWeight:"900"},
+  notesHomeTextV2:{fontSize:11,color:"#FFFFFF",fontWeight:"900"},
+  notesHeroTagV2:{fontSize:9,color:"#FFFFFF",fontWeight:"900",letterSpacing:.6,textShadowColor:"#00352B",textShadowRadius:4},
+  notesHeroCopyV2:{maxWidth:"82%"},
+  notesHeroTitleRowV2:{flexDirection:"row",alignItems:"center",gap:9},
+  notesHeroTitleIconV2:{width:39,height:39,alignItems:"center",justifyContent:"center"},
+  notesHeroTitleV2:{fontSize:29,color:"#FFFFFF",fontWeight:"900",lineHeight:36,textShadowColor:"rgba(0,0,0,0.35)",textShadowRadius:5},
+  notesHeroGoldV2:{color:"#F5CB59"},
+  notesHeroSubtitleV2:{fontSize:11,color:"#F2F8F3",lineHeight:17,marginTop:5,textShadowColor:"rgba(0,0,0,0.55)",textShadowRadius:3},
+  notesHeroUnderlineV2:{width:42,height:3,borderRadius:3,backgroundColor:"#F1CA58",marginTop:8},
+  notesBodyV2:{paddingHorizontal:12,paddingTop:0,paddingBottom:7,backgroundColor:"#DDF3E7"},
+  notesSummaryV2:{backgroundColor:"#003F33",borderRadius:18,padding:12,marginTop:-1,borderWidth:1.1,borderColor:"#C6A84C",shadowColor:"#003D32",shadowOpacity:.19,shadowRadius:8,shadowOffset:{width:0,height:3},elevation:4},
+  notesSummaryTopV2:{flexDirection:"row",alignItems:"center",gap:9},
+  notesSummaryIconV2:{width:51,height:51,borderRadius:26,backgroundColor:"#075B48",borderWidth:1,borderColor:"#1BA77A",alignItems:"center",justifyContent:"center"},
+  notesSummaryCopyV2:{flex:1,minWidth:0},
+  notesSummaryEyebrowV2:{alignSelf:"flex-start",backgroundColor:"#F4D16A",color:"#4D3B13",fontSize:9,fontWeight:"900",paddingHorizontal:9,paddingVertical:4,borderRadius:12,overflow:"hidden"},
+  notesSummaryTitleV2:{fontSize:17,color:"#FFFFFF",fontWeight:"900",marginTop:4,lineHeight:22},
+  notesSummaryCaptionV2:{fontSize:9,color:"#C8E8D9",marginTop:2},
+  notesMiniChartV2:{height:42,flexDirection:"row",alignItems:"flex-end",gap:3,paddingHorizontal:3,paddingBottom:2},
+  notesMiniBarV2:{width:5,borderRadius:3},
+  notesHeroActionsV2:{flexDirection:"row",gap:8,marginTop:11},
+  notesPrimaryButtonV2:{flex:1,minHeight:39,alignItems:"center",justifyContent:"center",backgroundColor:"#F2CC62",borderRadius:20,borderWidth:1,borderColor:"#FFE6A0",shadowColor:"#F5CD63",shadowOpacity:.2,shadowRadius:4,elevation:2},
+  notesPrimaryButtonTextV2:{fontSize:12,color:"#173C2D",fontWeight:"900"},
+  notesSecondaryButtonV2:{flex:1,minHeight:39,alignItems:"center",justifyContent:"center",backgroundColor:"#075E4A",borderRadius:20,borderWidth:1,borderColor:"#74C9A5"},
+  notesSecondaryButtonTextV2:{fontSize:11.5,color:"#FFFFFF",fontWeight:"900"},
+  notesSearchV2:{minHeight:43,flexDirection:"row",alignItems:"center",gap:7,backgroundColor:"#F9FFFB",borderWidth:1,borderColor:"#B8DCC8",borderRadius:15,paddingLeft:12,paddingRight:6,marginTop:12,shadowColor:"#1F6B4E",shadowOpacity:.08,shadowRadius:4,shadowOffset:{width:0,height:2},elevation:2},
+  notesSearchIconV2:{fontSize:23,color:"#087A5C",fontWeight:"800",lineHeight:26},
+  notesSearchInputV2:{flex:1,minWidth:0,paddingVertical:8,paddingHorizontal:2,fontSize:12,color:"#173D30"},
+  notesFilterButtonV2:{width:34,height:34,borderRadius:18,backgroundColor:"#DDF3E7",alignItems:"center",justifyContent:"center",borderWidth:1,borderColor:"#BFE2CF"},
+  notesFilterIconV2:{fontSize:20,color:"#087A5C",fontWeight:"900"},
+  notesSortMenuV2:{backgroundColor:"#F8FFFA",borderWidth:1,borderColor:"#C4E1CF",borderRadius:13,padding:9,marginTop:7,shadowColor:"#173E2D",shadowOpacity:.08,shadowRadius:5,elevation:2},
+  notesSortTitleV2:{fontSize:11,color:"#315D48",fontWeight:"900",marginBottom:5},
+  notesSortOptionV2:{flexDirection:"row",alignItems:"center",justifyContent:"space-between",paddingHorizontal:10,paddingVertical:8,borderRadius:8},
+  notesSortOptionActiveV2:{backgroundColor:"#E0F3E7"},
+  notesSortOptionTextV2:{fontSize:11,color:"#456B58",fontWeight:"700"},
+  notesSortOptionTextActiveV2:{color:"#087A5C",fontWeight:"900"},
+  notesSortTickV2:{fontSize:13,color:"#087A5C",fontWeight:"900"},
+  notesCategoryGridV2:{flexDirection:"row",gap:6,marginTop:11},
+  notesCategoryCardV2:{flex:1,minWidth:0,minHeight:74,alignItems:"center",justifyContent:"center",paddingHorizontal:3,paddingVertical:8,borderRadius:14,backgroundColor:"#EAF8EF",borderWidth:1,borderColor:"#C8E4D2",shadowColor:"#1F6B4E",shadowOpacity:.08,shadowRadius:4,shadowOffset:{width:0,height:2},elevation:1},
+  notesCategoryCardActiveV2:{backgroundColor:"#00815F",borderColor:"#E4C45C",shadowColor:"#087A5C",shadowOpacity:.22,elevation:3},
+  notesCategoryLabelV2:{fontSize:9.5,color:"#255542",fontWeight:"900",textAlign:"center",marginTop:4,lineHeight:12},
+  notesCategoryLabelActiveV2:{color:"#FFFFFF"},
+  notesCategoryCountV2:{fontSize:9,color:"#5D7D6D",fontWeight:"800",marginTop:2},
+  notesCategoryCountActiveV2:{color:"#E5F5EB"},
+  notesCategoryActiveMarkV2:{position:"absolute",bottom:-1,width:17,height:3,borderRadius:3,backgroundColor:"#F4D16A"},
+  notesListHeadingV2:{flexDirection:"row",alignItems:"center",justifyContent:"space-between",marginTop:18,marginBottom:8},
+  notesListTitleRowV2:{flexDirection:"row",alignItems:"center",gap:7},
+  notesListBookmarkV2:{fontSize:20,color:"#0A7858",fontWeight:"900"},
+  notesListTitleV2:{fontSize:17,color:"#174C39",fontWeight:"900"},
+  notesResultCountV2:{fontSize:10,color:"#5D7D6D",fontWeight:"900"},
+  notesEmptyV2:{alignItems:"center",justifyContent:"center",backgroundColor:"#F7FCF8",borderWidth:1,borderColor:"#C5E3D0",borderRadius:18,paddingHorizontal:18,paddingVertical:20,marginTop:4,marginBottom:5},
+  notesEmptyIconV2:{width:48,height:48,borderRadius:15,backgroundColor:"#E1F4E8",alignItems:"center",justifyContent:"center"},
+  notesEmptyTitleV2:{fontSize:15,color:"#174C39",fontWeight:"900",marginTop:8},
+  notesEmptyTextV2:{fontSize:10.5,color:"#638174",lineHeight:16,textAlign:"center",marginTop:4,maxWidth:250},
+  notesEmptyButtonV2:{backgroundColor:"#087A5C",paddingHorizontal:17,paddingVertical:9,borderRadius:10,marginTop:10},
+  notesEmptyButtonTextV2:{fontSize:11,color:"#FFFFFF",fontWeight:"900"},
+  noteCardV2:{backgroundColor:"#F9FFFB",borderRadius:15,padding:10,marginTop:8,borderWidth:1,borderColor:"#D0E8D9",borderLeftWidth:4,shadowColor:"#1E5F45",shadowOpacity:.08,shadowRadius:4,shadowOffset:{width:0,height:2},elevation:2},
+  noteCardPersonalV2:{borderLeftColor:"#C88AF4"},
+  noteCardStudyV2:{borderLeftColor:"#4C9AE8"},
+  noteCardVerseV2:{borderLeftColor:"#EFC84C"},
+  noteCardMainV2:{flexDirection:"row",alignItems:"center",gap:8},
+  noteCardIconV2:{width:39,height:39,borderRadius:13,alignItems:"center",justifyContent:"center"},
+  noteCardIconPersonalV2:{backgroundColor:"#F0E5FC"},
+  noteCardIconStudyV2:{backgroundColor:"#E2F0FF"},
+  noteCardIconVerseV2:{backgroundColor:"#E1F5E8"},
+  noteCardCopyV2:{flex:1,minWidth:0},
+  noteCardTitleV2:{fontSize:12.5,color:"#153E30",fontWeight:"900"},
+  noteCardExcerptV2:{fontSize:10,color:"#5D756A",lineHeight:14,marginTop:2},
+  noteCardReferenceV2:{fontSize:9,color:"#087A5C",fontWeight:"900",marginTop:3},
+  noteCardMoreV2:{width:28,height:34,alignItems:"center",justifyContent:"center",borderRadius:9,backgroundColor:"#EDF7F0"},
+  noteCardMoreTextV2:{fontSize:14,color:"#174B39",fontWeight:"900",letterSpacing:1},
+  noteCardMetaV2:{flexDirection:"row",alignItems:"center",gap:6,marginTop:8,minHeight:20},
+  noteKindPillV2:{paddingHorizontal:8,paddingVertical:4,borderRadius:12},
+  noteKindPersonalV2:{backgroundColor:"#F0E2FB"},
+  noteKindStudyV2:{backgroundColor:"#E2EEFF"},
+  noteKindVerseV2:{backgroundColor:"#DDF3E5"},
+  noteKindPillTextV2:{fontSize:9,fontWeight:"900"},
+  noteKindTextPersonalV2:{color:"#8753B5"},
+  noteKindTextStudyV2:{color:"#235B9C"},
+  noteKindTextVerseV2:{color:"#087A5C"},
+  noteCardTagsV2:{flex:1,minWidth:0,fontSize:8.5,color:"#6C8377"},
+  noteCardDateV2:{fontSize:8.5,color:"#6D8378",fontWeight:"700"},
+  noteActionsMenuV2:{flexDirection:"row",flexWrap:"wrap",gap:7,borderTopWidth:1,borderTopColor:"#E3EFE7",paddingTop:8,marginTop:8},
+  noteActionButtonV2:{backgroundColor:"#E8F5EC",borderRadius:9,paddingHorizontal:10,paddingVertical:7},
+  noteActionTextV2:{fontSize:10,color:"#0D7655",fontWeight:"900"},
+  noteActionDeleteV2:{backgroundColor:"#FCE9E7",borderRadius:9,paddingHorizontal:10,paddingVertical:7},
+  noteActionDeleteTextV2:{fontSize:10,color:"#A83E38",fontWeight:"900"},
+  noteDeleteConfirmV2:{backgroundColor:"#FFF5E3",borderWidth:1,borderColor:"#E9CB8A",borderRadius:9,padding:9,marginTop:8},
+  noteDeleteConfirmTextV2:{fontSize:10,color:"#61491C",fontWeight:"800"},
+  noteDeleteButtonsV2:{flexDirection:"row",justifyContent:"flex-end",gap:18,marginTop:7},
+  noteDeleteCancelV2:{fontSize:10,color:"#496D59",fontWeight:"900"},
+  noteDeleteYesV2:{fontSize:10,color:"#AD3F38",fontWeight:"900"},
+  notesFabRowV2:{alignItems:"flex-end",marginTop:2,marginBottom:8},
+  notesFabV2:{width:49,height:49,borderRadius:25,backgroundColor:"#F3C84F",borderWidth:1,borderColor:"#FFE7A1",alignItems:"center",justifyContent:"center",shadowColor:"#B78B2A",shadowOpacity:.3,shadowRadius:7,shadowOffset:{width:0,height:3},elevation:5},
+  notesFabPlusV2:{fontSize:29,color:"#174B38",fontWeight:"500",lineHeight:33},
+  notesBottomToolsV2:{flexDirection:"row",gap:6,marginTop:0},
+  notesBottomToolV2:{flex:1,minWidth:0,minHeight:55,alignItems:"center",justifyContent:"center",paddingHorizontal:2,paddingVertical:7,borderRadius:15,backgroundColor:"#EAF9F0",borderWidth:1,borderColor:"#94CDB0",shadowColor:"#247A57",shadowOpacity:.1,shadowRadius:4,shadowOffset:{width:0,height:2},elevation:2},
+  notesBottomToolIconV2:{fontSize:19,color:"#087A5C",fontWeight:"900",lineHeight:22},
+  notesBottomToolTextV2:{fontSize:9.5,color:"#146548",fontWeight:"900",marginTop:2,textAlign:"center"},
+  notesFooterV2:{fontSize:9,color:"#668277",lineHeight:14,textAlign:"center",marginTop:9,paddingHorizontal:9},
 
 
 });
