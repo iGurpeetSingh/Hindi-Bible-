@@ -88,6 +88,8 @@ export default function App() {
   const [noteQuery,setNoteQuery]=useState("");
   const [noteFilter,setNoteFilter]=useState("सभी");
   const [noteDeleteConfirmId,setNoteDeleteConfirmId]=useState<string|null>(null);
+  const [noteBackupModalVisible,setNoteBackupModalVisible]=useState(false);
+  const [noteImportDraft,setNoteImportDraft]=useState("");
   const [verseNotes,setVerseNotes]=useState<Record<string,string>>({});
   const [verseHighlights,setVerseHighlights]=useState<Record<string,string>>({});
   const [fontSize,setFontSize]=useState(16);
@@ -394,6 +396,60 @@ export default function App() {
     const reference=item.reference?(`\n\nBible Reference: ${referenceLabel(item.reference)}`):"";
     try { await Share.share({message:`${item.title}\n\n${item.content}${reference}${tags}\n\n— Hindi Bible`}); }
     catch { Alert.alert("Share नहीं हुआ","नोट शेयर करते समय समस्या आई।"); }
+  }
+
+  async function copyNotesBackup() {
+    const payload={format:"hindi-bible-notes",version:1,exportedAt:new Date().toISOString(),notes};
+    try {
+      await Clipboard.setStringAsync(JSON.stringify(payload,null,2));
+      Alert.alert("Backup तैयार है",`${notes.length} नोट्स का JSON Backup Clipboard में कॉपी हो गया है। इसे किसी सुरक्षित जगह सेव करें।`);
+    } catch {
+      Alert.alert("Backup नहीं बना","Clipboard तक पहुँच उपलब्ध नहीं है।");
+    }
+  }
+
+  function openNotesImport() {
+    setNoteImportDraft("");setNoteBackupModalVisible(true);
+  }
+
+  async function importNotesBackup() {
+    try {
+      const payload=JSON.parse(noteImportDraft) as {format?:unknown;version?:unknown;notes?:unknown};
+      if(payload.format!=="hindi-bible-notes"||payload.version!==1||!Array.isArray(payload.notes)) {
+        Alert.alert("Backup Format सही नहीं","Hindi Bible Notes का Version 1 JSON Backup चुनें।");return;
+      }
+      const incoming:BibleNote[]=payload.notes.flatMap((value:unknown)=>{
+        if(!value||typeof value!=="object")return [];
+        const item=value as Partial<BibleNote>;
+        if(typeof item.id!=="string"||typeof item.content!=="string"||!item.content.trim())return [];
+        const kind=item.kind==="verse"||item.kind==="study"?item.kind:"personal";
+        const reference=item.reference&&typeof item.reference.bookId==="string"&&typeof item.reference.chapter==="number"?item.reference:undefined;
+        return [{
+          id:item.id,
+          title:typeof item.title==="string"&&item.title.trim()?item.title:"बिना शीर्षक नोट",
+          content:item.content,
+          kind,
+          tags:Array.isArray(item.tags)?item.tags.filter((tag):tag is string=>typeof tag==="string"):[],
+          reference,
+          createdAt:typeof item.createdAt==="number"?item.createdAt:Date.now(),
+          updatedAt:typeof item.updatedAt==="number"?item.updatedAt:Date.now()
+        }];
+      });
+      if(!incoming.length){Alert.alert("कोई मान्य नोट नहीं मिला","Backup में पढ़े जा सकने वाले Notes नहीं मिले।");return;}
+      const merged=new Map(notes.map(item=>[item.id,item]));
+      incoming.forEach(item=>merged.set(item.id,item));
+      const updated=[...merged.values()].sort((a,b)=>b.updatedAt-a.updatedAt);
+      setNotes(updated);await storage.setNoteLibrary(updated);
+      const legacyNext={...verseNotes};
+      incoming.forEach(item=>{
+        if(item.kind==="verse"&&item.reference?.verse)legacyNext[`${item.reference.bookId}.${item.reference.chapter}.${item.reference.verse}`]=item.content;
+      });
+      setVerseNotes(legacyNext);await storage.setNotes(legacyNext);
+      setNoteBackupModalVisible(false);setNoteImportDraft("");
+      Alert.alert("Import पूरा हुआ",`${incoming.length} Notes Import/Update हुए।`);
+    } catch {
+      Alert.alert("JSON पढ़ा नहीं जा सका","पूरे Backup JSON को कॉपी करके फिर से Paste करें।");
+    }
   }
 
   function openNoteReference(item:BibleNote) {
@@ -730,7 +786,7 @@ export default function App() {
         {passage&&<View style={s.verseList}>
           {verseList.map((v,i)=><Pressable key={v.number||i} onPress={()=>selectVerseAndShowActions(v.number||i+1)} {...({onContextMenu:(event:any)=>{event.preventDefault?.();selectVerseAndShowActions(v.number||i+1);}} as any)} style={[s.verseRow,speaking&&speechVerse===i&&s.verseActive,selectedVerse===(v.number||i+1)&&s.verseSelected,verseHighlights[`${book.id}.${chapter}.${v.number||i+1}`]?{backgroundColor:verseHighlights[`${book.id}.${chapter}.${v.number||i+1}`]}:null]}>
             {v.number>0&&<Text style={[s.verseNumber,selectedVerse===(v.number||i+1)&&s.verseSelectedText]}>{v.number}</Text>}
-            <Text style={[s.verseText,{fontSize:Math.min(fontSize,19),lineHeight:Math.min(fontSize,19)*1.55},selectedVerse===(v.number||i+1)&&s.verseSelectedText]}>{v.text}</Text>
+            <Text style={[s.verseText,{fontSize:Math.min(fontSize,19),lineHeight:Math.min(fontSize,19)*1.55},selectedVerse===(v.number||i+1)&&s.verseSelectedText]}>{v.text}</Text>{notes.some(item=>item.kind==="verse"&&item.reference?.bookId===book.id&&item.reference.chapter===chapter&&item.reference.verse===(v.number||i+1))&&<Text style={s.verseNoteIndicator}>✎</Text>}
           </Pressable>)}
           <Text style={s.copyright}>{passage.reference} • {passage.copyright||"अनुवाद का लाइसेंस और श्रेय Settings में देखें।"}</Text>
         </View>}
@@ -960,6 +1016,10 @@ export default function App() {
             <Pressable style={s.notesPrimaryButton} onPress={()=>openNewNote("personal")}><Text style={s.notesPrimaryButtonText}>＋ नया नोट</Text></Pressable>
             <Pressable style={s.notesSecondaryButton} onPress={()=>openNewNote("study")}><Text style={s.notesSecondaryButtonText}>＋ Bible Study</Text></Pressable>
           </View>
+          <View style={s.notesUtilityActions}>
+            <Pressable style={s.notesUtilityButton} onPress={copyNotesBackup}><Text style={s.notesUtilityText}>↓ Backup Copy</Text></Pressable>
+            <Pressable style={s.notesUtilityButton} onPress={openNotesImport}><Text style={s.notesUtilityText}>↑ Backup Import</Text></Pressable>
+          </View>
         </View>
 
         <TextInput value={noteQuery} onChangeText={setNoteQuery} placeholder="नोट का शीर्षक, वचन या शब्द खोजें…" placeholderTextColor={C.muted} style={s.notesSearch}/>
@@ -1154,6 +1214,26 @@ export default function App() {
             </View>
           </View>
         </ScrollView>
+      </View>
+    </Modal>
+
+    <Modal visible={noteBackupModalVisible} transparent animationType="slide" onRequestClose={()=>setNoteBackupModalVisible(false)}>
+      <View style={s.actionScrim}>
+        <View style={s.noteEditor}>
+          <View style={s.actionSheetHeader}>
+            <View style={{flex:1}}>
+              <Text style={s.actionSheetTitle}>Notes Backup Import</Text>
+              <Text style={s.actionSheetSubtitle}>Hindi Bible का JSON Backup Paste करें</Text>
+            </View>
+            <Pressable onPress={()=>setNoteBackupModalVisible(false)} hitSlop={12}><Text style={s.closeText}>✕</Text></Pressable>
+          </View>
+          <Text style={s.noteBackupHint}>यह Import समान Note ID वाले नोट को Update करेगा और नए नोट जोड़ देगा। मौजूदा बाकी नोट हटेंगे नहीं।</Text>
+          <TextInput value={noteImportDraft} onChangeText={setNoteImportDraft} multiline autoCapitalize="none" placeholder='{"format":"hindi-bible-notes","version":1,"notes":[]}' placeholderTextColor={C.muted} style={s.noteBackupInput}/>
+          <View style={s.noteEditorButtons}>
+            <Pressable style={s.noteCancelButton} onPress={()=>setNoteBackupModalVisible(false)}><Text style={s.noteCancelText}>रद्द करें</Text></Pressable>
+            <Pressable style={[s.noteSaveButton,!noteImportDraft.trim()&&{opacity:.45}]} onPress={importNotesBackup} disabled={!noteImportDraft.trim()}><Text style={s.noteSaveText}>Backup Import करें</Text></Pressable>
+          </View>
+        </View>
       </View>
     </Modal>
   </SafeAreaView>;
@@ -1379,6 +1459,14 @@ planBottomWave:{marginTop:0,marginBottom:-1},
   actionSheetHeader:{flexDirection:"row",alignItems:"center",justifyContent:"space-between",marginBottom:12},
   actionSheetTitle:{fontSize:18,color:"#17382B",fontWeight:"900"},
   actionSheetSubtitle:{fontSize:11,color:"#688075",marginTop:3},
+
+
+  verseNoteIndicator:{fontSize:14,color:"#D08B20",fontWeight:"900",marginLeft:3,marginTop:3},
+  notesUtilityActions:{flexDirection:"row",gap:8,marginTop:9},
+  notesUtilityButton:{flex:1,alignItems:"center",paddingVertical:8,borderRadius:9,borderWidth:1,borderColor:"#8BC7AD",backgroundColor:"#0B5947"},
+  notesUtilityText:{fontSize:10,color:"#E5F3E9",fontWeight:"800"},
+  noteBackupHint:{fontSize:11,color:"#647B6E",lineHeight:17,marginTop:8},
+  noteBackupInput:{minHeight:180,maxHeight:320,borderWidth:1,borderColor:"#CBDDD1",borderRadius:11,padding:11,color:"#172B3A",fontSize:11,textAlignVertical:"top",backgroundColor:"#FBFDFC",marginTop:12},
 
 
 });
