@@ -686,7 +686,7 @@ export default function App() {
                   <Path d="M-8 43 C 24 20, 45 52, 78 34 S 124 19, 158 37" stroke={item.accent} strokeWidth=".8" fill="none" opacity=".28"/>
                 </Svg>
                 <View style={[s.featureIconHalo,{borderColor:item.accent,backgroundColor:item.halo,shadowColor:item.accent}]}>
-                  <HomeFeatureIcon name={item.icon} color={item.accent}/>
+                  <HomeFeatureIcon name={item.icon as HomeIconName} color={item.accent}/>
                 </View>
                 <Text style={s.featureLabel}>{item.label}</Text>
                 <Text style={s.featureSub}>{item.description}</Text>
